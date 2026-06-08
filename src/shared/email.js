@@ -24,17 +24,26 @@ function winProbColor(prob) {
 
 // ── Cover letter block ────────────────────────────────────────────────────────
 
+const CL_MAX_CHARS = 800
+
+function truncate(text) {
+  if (!text) return ''
+  return text.length > CL_MAX_CHARS ? text.slice(0, CL_MAX_CHARS) + '...' : text
+}
+
 function coverLetterBlock(coverLetter) {
   if (!coverLetter) return ''
+  const pt = truncate(coverLetter.cover_letter_pt)
+  const en = truncate(coverLetter.cover_letter_en)
   return `
     <div style="margin-top:16px;">
-      <div style="background:#f3f4f6;border-left:4px solid #6b7280;padding:14px 16px;border-radius:4px;margin-bottom:10px;max-height:200px;overflow:hidden;">
-        <p style="font-size:11px;font-weight:700;color:#374151;margin:0 0 6px 0;text-transform:uppercase;letter-spacing:.5px;">🇧🇷 Cover Letter — PT</p>
-        <p style="font-size:13px;color:#374151;margin:0;line-height:1.6;white-space:pre-wrap;">${coverLetter.cover_letter_pt}</p>
+      <div style="background:#f3f4f6;border-left:4px solid #6b7280;padding:14px 16px;border-radius:4px;margin-bottom:10px;">
+        <p style="font-size:11px;font-weight:700;color:#374151;margin:0 0 6px 0;text-transform:uppercase;letter-spacing:.5px;">&#127463;&#127479; Cover Letter — PT</p>
+        <p style="font-size:13px;color:#374151;margin:0;line-height:1.6;white-space:pre-wrap;">${pt}</p>
       </div>
-      <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:14px 16px;border-radius:4px;max-height:200px;overflow:hidden;">
-        <p style="font-size:11px;font-weight:700;color:#1e40af;margin:0 0 6px 0;text-transform:uppercase;letter-spacing:.5px;">🇺🇸 Cover Letter — EN</p>
-        <p style="font-size:13px;color:#1e3a5f;margin:0;line-height:1.6;white-space:pre-wrap;">${coverLetter.cover_letter_en}</p>
+      <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:14px 16px;border-radius:4px;">
+        <p style="font-size:11px;font-weight:700;color:#1e40af;margin:0 0 6px 0;text-transform:uppercase;letter-spacing:.5px;">&#127482;&#127480; Cover Letter — EN</p>
+        <p style="font-size:13px;color:#1e3a5f;margin:0;line-height:1.6;white-space:pre-wrap;">${en}</p>
       </div>
     </div>`
 }
@@ -107,11 +116,15 @@ function buildFreelanceCard(project, coverLetter) {
 // ── Template base ─────────────────────────────────────────────────────────────
 
 function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, sections, footerDate }) {
-  const summaryHtml = summaryCards.map(c => `
-    <div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;text-align:center;min-width:120px;">
-      <p style="margin:0;font-size:28px;font-weight:700;color:${c.color ?? '#111827'};">${c.value}</p>
-      <p style="margin:4px 0 0 0;font-size:12px;color:#6b7280;">${c.label}</p>
-    </div>`).join('')
+  const summaryHtml = `<table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;"><tr>${
+    summaryCards.map(c => `
+    <td style="padding-right:12px;vertical-align:top;">
+      <div style="display:inline-block;background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:16px 20px;text-align:center;min-width:120px;">
+        <p style="margin:0;font-size:28px;font-weight:700;color:${c.color ?? '#111827'};">${c.value}</p>
+        <p style="margin:4px 0 0 0;font-size:12px;color:#6b7280;">${c.label}</p>
+      </div>
+    </td>`).join('')
+  }</tr></table>`
 
   const sectionsHtml = sections.map(s => `
     <h2 style="font-size:16px;color:#374151;margin:32px 0 12px 0;padding-bottom:6px;border-bottom:2px solid #e5e7eb;">${s.title}</h2>
@@ -128,7 +141,7 @@ function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, s
       <p style="margin:8px 0 0 0;opacity:.85;font-size:14px;">${footerDate}</p>
     </div>
 
-    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:24px;">${summaryHtml}</div>
+    ${summaryHtml}
 
     ${sectionsHtml}
 

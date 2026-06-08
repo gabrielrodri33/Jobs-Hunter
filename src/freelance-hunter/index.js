@@ -9,19 +9,16 @@ import { normalizeProject } from './normalizer.js'
 
 const SEEN_FILE = 'data/seen-projects.json'
 
-// Dedup cross-platform por similaridade de título (>80% chars em comum)
+// Similaridade Jaccard baseada em conjuntos de palavras
 function titleSimilarity(a, b) {
-  const normalize = s => s.toLowerCase().replace(/[^a-z0-9]/g, '')
-  const na = normalize(a)
-  const nb = normalize(b)
-  if (!na || !nb) return 0
-  const longer = na.length > nb.length ? na : nb
-  const shorter = na.length > nb.length ? nb : na
-  let matches = 0
-  for (const ch of shorter) {
-    if (longer.includes(ch)) matches++
-  }
-  return matches / longer.length
+  const words = s => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean))
+  const wa = words(a)
+  const wb = words(b)
+  if (wa.size === 0 && wb.size === 0) return 1
+  if (wa.size === 0 || wb.size === 0) return 0
+  const intersection = [...wa].filter(w => wb.has(w)).length
+  const union = new Set([...wa, ...wb]).size
+  return intersection / union
 }
 
 function dedupCrossplatform(projects) {

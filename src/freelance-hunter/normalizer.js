@@ -1,4 +1,11 @@
+import { createHash } from 'crypto'
+
 // Normaliza dados brutos de qualquer plataforma para schema único cross-platform
+
+function stableId(prefix, title, link) {
+  const hash = createHash('md5').update(`${title}|${link}`).digest('hex').slice(0, 12)
+  return `${prefix}-${hash}`
+}
 
 function formatBudget(min, max, currency = 'USD') {
   if (!min && !max) return 'Não informado'
@@ -15,7 +22,7 @@ function guessBudgetType(raw) {
 
 function normalizeUpwork(raw) {
   return {
-    id: `upwork-${raw.id ?? raw.jobId ?? Math.random().toString(36).slice(2)}`,
+    id: raw.id ?? raw.jobId ? `upwork-${raw.id ?? raw.jobId}` : stableId('upwork', raw.title ?? raw.jobTitle ?? '', raw.url ?? raw.jobUrl ?? ''),
     title: raw.title ?? raw.jobTitle ?? 'Sem título',
     description: raw.description ?? raw.jobDescription ?? '',
     client: raw.clientInfo?.companyName ?? raw.client ?? 'Não informado',
@@ -31,7 +38,7 @@ function normalizeUpwork(raw) {
 
 function normalizeWorkana(raw) {
   return {
-    id: `workana-${raw.id ?? raw.slug ?? Math.random().toString(36).slice(2)}`,
+    id: raw.id ?? raw.slug ? `workana-${raw.id ?? raw.slug}` : stableId('workana', raw.title ?? raw.name ?? '', raw.url ?? raw.permalink ?? ''),
     title: raw.title ?? raw.name ?? 'Sem título',
     description: raw.description ?? raw.body ?? '',
     client: raw.client?.name ?? raw.client ?? 'Não informado',
@@ -50,12 +57,12 @@ function normalizeFreelancer(raw) {
   const budget = raw.budget ?? {}
 
   return {
-    id: `fl-${raw.id ?? Math.random().toString(36).slice(2)}`,
+    id: raw.id ? `fl-${raw.id}` : stableId('fl', raw.title ?? '', raw.seo_url ?? ''),
     title: raw.title ?? 'Sem título',
     description: raw.description ?? raw.preview_description ?? '',
     client: raw.owner_id ? `User #${raw.owner_id}` : 'Não informado',
     budget: formatBudget(budget.minimum, budget.maximum, budget.currency?.code ?? 'USD'),
-    budget_type: raw.type === 'FIXED' ? 'fixed' : raw.type === 'HOURLY' ? 'hourly' : 'unknown',
+    budget_type: (raw.type ?? '').toUpperCase() === 'FIXED' ? 'fixed' : (raw.type ?? '').toUpperCase() === 'HOURLY' ? 'hourly' : 'unknown',
     skills: jobs,
     proposals_count: raw.bid_stats?.bid_count ?? null,
     posted_at: raw.time_updated ? new Date(raw.time_updated * 1000).toISOString() : null,

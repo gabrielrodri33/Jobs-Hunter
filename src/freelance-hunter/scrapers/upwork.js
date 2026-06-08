@@ -54,7 +54,7 @@ export async function scrapeUpwork() {
 
       const datasetId = await pollRun(runId, token)
 
-      const itemsRes = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=100`)
+      const itemsRes = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=20&clean=true`)
       const items = await itemsRes.json()
 
       if (Array.isArray(items)) allProjects.push(...items)
