@@ -1,0 +1,69 @@
+const APIFY_BASE = 'https://api.apify.com/v2'
+const ACTOR_ID = 'jupri~upwork'
+const POLL_INTERVAL_MS = 10000
+const TIMEOUT_MS = 8 * 60 * 1000
+const KEYWORD_DELAY_MS = 3000
+
+export const UPWORK_KEYWORDS = [
+  '.NET developer',
+  'Full Stack .NET React',
+  'Next.js developer',
+  'C# developer',
+  'Power BI dashboard',
+  'Python automation',
+  'cybersecurity consultant',
+  'SaaS development .NET',
+  'API integration .NET'
+]
+
+async function pollRun(runId, token) {
+  const deadline = Date.now() + TIMEOUT_MS
+
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
+
+    const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${token}`)
+    const data = await res.json()
+    const status = data.data?.status
+
+    if (status === 'SUCCEEDED') return data.data.defaultDatasetId
+    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
+      throw new Error(`Upwork run ${status}`)
+    }
+  }
+  throw new Error('Upwork scraper timeout')
+}
+
+export async function scrapeUpwork() {
+  const token = process.env.APIFY_TOKEN
+  const allProjects = []
+
+  for (const keyword of UPWORK_KEYWORDS) {
+    try {
+      console.log(`  🔎 Upwork: "${keyword}"`)
+
+      const runRes = await fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ searchQuery: keyword, maxItems: 20, type: 'jobs' })
+      })
+
+      const runData = await runRes.json()
+      const runId = runData.data?.id
+      if (!runId) throw new Error(`Falha ao iniciar: ${JSON.stringify(runData)}`)
+
+      const datasetId = await pollRun(runId, token)
+
+      const itemsRes = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=100`)
+      const items = await itemsRes.json()
+
+      if (Array.isArray(items)) allProjects.push(...items)
+    } catch (err) {
+      console.error(`  ❌ Upwork erro "${keyword}": ${err.message}`)
+    }
+
+    await new Promise(r => setTimeout(r, KEYWORD_DELAY_MS))
+  }
+
+  return allProjects
+}

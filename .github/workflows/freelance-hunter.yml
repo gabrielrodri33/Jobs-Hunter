@@ -1,0 +1,42 @@
+name: Freelance Hunter
+
+on:
+  schedule:
+    - cron: '0 12 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Restaurar cache de dedup
+        uses: actions/cache@v4
+        with:
+          path: data/seen-projects.json
+          key: seen-projects-${{ github.run_id }}
+          restore-keys: seen-projects-
+
+      - name: Executar Freelance Hunter
+        run: node src/freelance-hunter/index.js
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          FREELANCER_TOKEN: ${{ secrets.FREELANCER_TOKEN }}
+          FREELANCE_EMAIL_FROM: ${{ secrets.FREELANCE_EMAIL_FROM }}
+          FREELANCE_EMAIL_TO: ${{ secrets.FREELANCE_EMAIL_TO }}
+
+      - name: Salvar cache de dedup
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: data/seen-projects.json
+          key: seen-projects-${{ github.run_id }}

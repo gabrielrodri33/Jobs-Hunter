@@ -1,0 +1,16 @@
+{
+  "name": "career-hunter",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Agente autônomo de busca de vagas e projetos freelance com Claude AI",
+  "scripts": {
+    "job-hunter": "node src/job-hunter/index.js",
+    "freelance-hunter": "node src/freelance-hunter/index.js",
+    "dev:jobs": "node --env-file=.env src/job-hunter/index.js",
+    "dev:freelance": "node --env-file=.env src/freelance-hunter/index.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "latest",
+    "resend": "latest"
+  }
+}

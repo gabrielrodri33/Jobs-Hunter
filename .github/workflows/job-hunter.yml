@@ -1,0 +1,41 @@
+name: Job Hunter
+
+on:
+  schedule:
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  hunt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - run: npm ci
+
+      - name: Restaurar cache de dedup
+        uses: actions/cache@v4
+        with:
+          path: data/seen-jobs.json
+          key: seen-jobs-${{ github.run_id }}
+          restore-keys: seen-jobs-
+
+      - name: Executar Job Hunter
+        run: node src/job-hunter/index.js
+        env:
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          JOB_EMAIL_FROM: ${{ secrets.JOB_EMAIL_FROM }}
+          JOB_EMAIL_TO: ${{ secrets.JOB_EMAIL_TO }}
+
+      - name: Salvar cache de dedup
+        if: always()
+        uses: actions/cache@v4
+        with:
+          path: data/seen-jobs.json
+          key: seen-jobs-${{ github.run_id }}
