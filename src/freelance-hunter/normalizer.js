@@ -1,18 +1,42 @@
+/**
+ * @module freelance-hunter/normalizer
+ * @description Normaliza dados brutos de qualquer plataforma para schema único cross-platform.
+ * Cada plataforma tem campos diferentes; este módulo os unifica em um objeto consistente.
+ */
+
 import { createHash } from 'crypto'
 
-// Normaliza dados brutos de qualquer plataforma para schema único cross-platform
-
+/**
+ * Gera um ID estável e único baseado no título e link do projeto.
+ * Usado quando a plataforma não fornece um ID numérico confiável.
+ * @param {string} prefix - Prefixo da plataforma (ex: 'upwork', 'fl').
+ * @param {string} title - Título do projeto.
+ * @param {string} link - URL do projeto.
+ * @returns {string} ID no formato `prefix-hash12chars`.
+ */
 function stableId(prefix, title, link) {
   const hash = createHash('md5').update(`${title}|${link}`).digest('hex').slice(0, 12)
   return `${prefix}-${hash}`
 }
 
+/**
+ * Formata o orçamento como string legível.
+ * @param {number|null} min - Valor mínimo do orçamento.
+ * @param {number|null} max - Valor máximo do orçamento.
+ * @param {string} [currency='USD'] - Código da moeda.
+ * @returns {string} Orçamento formatado ou 'Não informado'.
+ */
 function formatBudget(min, max, currency = 'USD') {
   if (!min && !max) return 'Não informado'
   if (min && max && min !== max) return `${currency} ${min} – ${max}`
   return `${currency} ${min ?? max}`
 }
 
+/**
+ * Infere o tipo de orçamento (hora/fixo) a partir dos dados brutos da plataforma.
+ * @param {*} raw - Dados brutos do projeto.
+ * @returns {'hourly'|'fixed'|'unknown'} Tipo de orçamento inferido.
+ */
 function guessBudgetType(raw) {
   const s = JSON.stringify(raw ?? '').toLowerCase()
   if (s.includes('hour') || s.includes('/h') || s.includes('hora')) return 'hourly'
@@ -20,6 +44,11 @@ function guessBudgetType(raw) {
   return 'unknown'
 }
 
+/**
+ * Normaliza um projeto bruto do Upwork (via Apify jupri/upwork).
+ * @param {Object} raw - Objeto bruto retornado pelo scraper.
+ * @returns {Object} Projeto normalizado no schema cross-platform.
+ */
 function normalizeUpwork(raw) {
   return {
     id: raw.id ?? raw.jobId ? `upwork-${raw.id ?? raw.jobId}` : stableId('upwork', raw.title ?? raw.jobTitle ?? '', raw.url ?? raw.jobUrl ?? ''),
@@ -36,6 +65,11 @@ function normalizeUpwork(raw) {
   }
 }
 
+/**
+ * Normaliza um projeto bruto do Workana (via Apify getdataforme/workana-job-scraper).
+ * @param {Object} raw - Objeto bruto retornado pelo scraper.
+ * @returns {Object} Projeto normalizado no schema cross-platform.
+ */
 function normalizeWorkana(raw) {
   return {
     id: raw.id ?? raw.slug ? `workana-${raw.id ?? raw.slug}` : stableId('workana', raw.title ?? raw.name ?? '', raw.url ?? raw.permalink ?? ''),
@@ -52,6 +86,11 @@ function normalizeWorkana(raw) {
   }
 }
 
+/**
+ * Normaliza um projeto bruto da API nativa do Freelancer.com.
+ * @param {Object} raw - Objeto bruto retornado pela API REST do Freelancer.com.
+ * @returns {Object} Projeto normalizado no schema cross-platform.
+ */
 function normalizeFreelancer(raw) {
   const jobs = raw.jobs ? Object.values(raw.jobs).map(j => j.name) : []
   const budget = raw.budget ?? {}
@@ -71,6 +110,14 @@ function normalizeFreelancer(raw) {
   }
 }
 
+/**
+ * Ponto de entrada público do normalizador.
+ * Roteia para a função específica de cada plataforma.
+ * @param {Object} raw - Dados brutos do projeto.
+ * @param {'Upwork'|'Workana'|'Freelancer.com'} platform - Plataforma de origem.
+ * @returns {Object} Projeto normalizado no schema cross-platform.
+ * @throws {Error} Se a plataforma não for reconhecida.
+ */
 export function normalizeProject(raw, platform) {
   switch (platform) {
     case 'Upwork': return normalizeUpwork(raw)

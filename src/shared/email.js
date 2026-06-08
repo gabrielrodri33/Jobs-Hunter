@@ -1,21 +1,31 @@
+/**
+ * @module email
+ * @description Templates HTML e envio de e-mails via Resend.
+ * Inclui cards para vagas de emprego e projetos freelance, com cover letters e bloco de custo.
+ */
+
 import { Resend } from 'resend'
 
 // ── Helpers de cor ────────────────────────────────────────────────────────────
 
+/** Retorna a cor do badge de score (verde para positivo, amarelo para avaliar). */
 function scoreColor(score) {
   return score === 'CANDIDATAR' || score === 'ACEITAR' ? '#16a34a' : '#ca8a04'
 }
 
+/** Retorna cor do badge de viabilidade de orçamento freelance. */
 function budgetBadgeColor(viability) {
   const map = { ÓTIMO: '#16a34a', BOM: '#2563eb', BAIXO: '#ca8a04', INVIÁVEL: '#dc2626', NÃO_INFORMADO: '#6b7280' }
   return map[viability] ?? '#6b7280'
 }
 
+/** Retorna cor do badge de plataforma freelance. */
 function platformColor(platform) {
   const map = { Upwork: '#6d28d9', Workana: '#16a34a', 'Freelancer.com': '#2563eb' }
   return map[platform] ?? '#374151'
 }
 
+/** Retorna cor da barra de win probability (verde/amarelo/vermelho). */
 function winProbColor(prob) {
   if (prob >= 60) return '#16a34a'
   if (prob >= 40) return '#ca8a04'
@@ -24,13 +34,20 @@ function winProbColor(prob) {
 
 // ── Cover letter block ────────────────────────────────────────────────────────
 
+// Limite de caracteres exibidos no e-mail para evitar e-mails muito longos
 const CL_MAX_CHARS = 800
 
+/** Trunca texto longo adicionando reticências. */
 function truncate(text) {
   if (!text) return ''
   return text.length > CL_MAX_CHARS ? text.slice(0, CL_MAX_CHARS) + '...' : text
 }
 
+/**
+ * Gera o bloco HTML com as duas versões de cover letter (PT e EN).
+ * @param {{cover_letter_pt: string, cover_letter_en: string}|null} coverLetter
+ * @returns {string} HTML do bloco ou string vazia se não houver cover letter.
+ */
 function coverLetterBlock(coverLetter) {
   if (!coverLetter) return ''
   const pt = truncate(coverLetter.cover_letter_pt)
@@ -50,6 +67,11 @@ function coverLetterBlock(coverLetter) {
 
 // ── Bloco de uso/custo ────────────────────────────────────────────────────────
 
+/**
+ * Gera o bloco HTML de resumo de custos da execução (rodapé do e-mail).
+ * @param {Object} usage - Objeto com scrapers, anthropic e totais.
+ * @returns {string} HTML do bloco de custo ou string vazia.
+ */
 function buildUsageBlock(usage) {
   if (!usage) return ''
 
@@ -107,6 +129,12 @@ function buildUsageBlock(usage) {
 
 // ── Card: vaga de emprego ─────────────────────────────────────────────────────
 
+/**
+ * Gera o card HTML de uma vaga de emprego.
+ * @param {Object} job - Vaga analisada pelo Claude.
+ * @param {Object|null} coverLetter - Cover letter gerada (ou null para vagas AVALIAR).
+ * @returns {string} HTML do card.
+ */
 function buildJobCard(job, coverLetter) {
   const matchList = (job.match_points ?? []).map(p => `<li style="margin:3px 0;">✅ ${p}</li>`).join('')
   const gapList = (job.gaps ?? []).map(g => `<li style="margin:3px 0;">⚠️ ${g}</li>`).join('')
@@ -132,6 +160,12 @@ function buildJobCard(job, coverLetter) {
 
 // ── Card: projeto freelance ───────────────────────────────────────────────────
 
+/**
+ * Gera o card HTML de um projeto freelance.
+ * @param {Object} project - Projeto analisado pelo Claude.
+ * @param {Object|null} coverLetter - Proposta gerada (ou null para projetos AVALIAR).
+ * @returns {string} HTML do card.
+ */
 function buildFreelanceCard(project, coverLetter) {
   const techList = (project.tech_match ?? []).map(t => `<li style="margin:3px 0;">✅ ${t}</li>`).join('')
   const gapList = (project.tech_gaps ?? []).map(g => `<li style="margin:3px 0;">⚠️ ${g}</li>`).join('')
@@ -172,6 +206,18 @@ function buildFreelanceCard(project, coverLetter) {
 
 // ── Template base ─────────────────────────────────────────────────────────────
 
+/**
+ * Monta o HTML completo do e-mail com header, cards de resumo, seções e rodapé.
+ * @param {Object} opts
+ * @param {string} opts.headerColor - Cor de fundo do header.
+ * @param {string} opts.headerEmoji - Emoji do título.
+ * @param {string} opts.headerTitle - Título do e-mail.
+ * @param {Array<{value: number, label: string, color: string}>} opts.summaryCards - Cards de resumo numérico.
+ * @param {Array<{title: string, cards: string}>} opts.sections - Seções de cards HTML.
+ * @param {string} opts.footerDate - Data/hora formatada para rodapé.
+ * @param {Object|null} opts.usageSummary - Objeto de uso para bloco de custos.
+ * @returns {string} HTML completo do e-mail.
+ */
 function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, sections, footerDate, usageSummary }) {
   const summaryHtml = `<table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;"><tr>${
     summaryCards.map(c => `
@@ -214,10 +260,19 @@ function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, s
 
 // ── Funções públicas ──────────────────────────────────────────────────────────
 
+/**
+ * Envia o e-mail diário de vagas de emprego.
+ * Inclui cover letters para vagas CANDIDATAR; sem cover letter para AVALIAR.
+ * @param {Object[]} candidatar - Vagas com score CANDIDATAR.
+ * @param {Object[]} avaliar - Vagas com score AVALIAR.
+ * @param {Object[]} coverLetters - Cover letters geradas (indexadas por id).
+ * @param {Object} usageSummary - Resumo de custos da execução.
+ */
 export async function sendJobsEmail(candidatar, avaliar, coverLetters, usageSummary) {
   const resend = new Resend(process.env.RESEND_API_KEY)
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
+  // Cria mapa id → coverLetter para lookup O(1)
   const clMap = Object.fromEntries(coverLetters.map(cl => [cl.id, cl]))
 
   const candidatarCards = candidatar.map(j => buildJobCard(j, clMap[j.id])).join('')
@@ -249,10 +304,19 @@ export async function sendJobsEmail(candidatar, avaliar, coverLetters, usageSumm
   })
 }
 
+/**
+ * Envia o e-mail diário de projetos freelance.
+ * Inclui propostas para projetos ACEITAR; sem proposta para AVALIAR.
+ * @param {Object[]} aceitar - Projetos com score ACEITAR.
+ * @param {Object[]} avaliar - Projetos com score AVALIAR.
+ * @param {Object[]} coverLetters - Propostas geradas (indexadas por id).
+ * @param {Object} usageSummary - Resumo de custos da execução.
+ */
 export async function sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSummary) {
   const resend = new Resend(process.env.RESEND_API_KEY)
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
+  // Cria mapa id → coverLetter para lookup O(1)
   const clMap = Object.fromEntries(coverLetters.map(cl => [cl.id, cl]))
 
   const aceitarCards = aceitar.map(p => buildFreelanceCard(p, clMap[p.id])).join('')
@@ -284,9 +348,19 @@ export async function sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSu
   })
 }
 
+/**
+ * Envia e-mail de notificação de erro fatal para o endereço configurado.
+ * Chamado pelo bloco catch de cada agente quando ocorre falha irrecuperável.
+ * @param {Object} opts
+ * @param {'job-hunter'|'freelance-hunter'} opts.agent - Nome do agente que falhou.
+ * @param {string} opts.error - Stack trace ou mensagem de erro.
+ * @param {string} opts.step - Etapa onde ocorreu o erro.
+ * @param {string} opts.timestamp - Timestamp ISO da falha.
+ */
 export async function sendErrorEmail({ agent, error, step, timestamp }) {
   const resend = new Resend(process.env.RESEND_API_KEY)
 
+  // Seleciona remetente/destinatário conforme o agente que falhou
   const emailFrom = agent === 'job-hunter'
     ? process.env.JOB_EMAIL_FROM
     : process.env.FREELANCE_EMAIL_FROM

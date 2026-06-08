@@ -1,264 +1,244 @@
-# career-hunter
+# 🎯 career-hunter
 
-Monorepo com dois agentes autônomos que buscam oportunidades de trabalho e projetos freelance, analisam com Claude AI e enviam e-mails formatados com cover letters prontas.
+> Agente autônomo que busca vagas de emprego e projetos freelance, analisa compatibilidade com seu perfil usando Claude AI e envia um e-mail diário com as melhores oportunidades — incluindo cover letters prontas em PT e EN.
 
-```
-┌─────────────────────────────────────────────────────────┐
-│                     career-hunter                       │
-│                                                         │
-│  ┌─────────────────────┐  ┌─────────────────────────┐  │
-│  │     job-hunter      │  │    freelance-hunter      │  │
-│  │  (diário 11h UTC)   │  │   (diário 12h UTC)       │  │
-│  └────────┬────────────┘  └────────┬────────────────┘  │
-│           │                        │                    │
-│  ┌────────▼────────┐      ┌────────▼────────────┐      │
-│  │ LinkedIn Scraper│      │ Upwork + Workana +   │      │
-│  │   (Apify)       │      │ Freelancer.com API   │      │
-│  └────────┬────────┘      └────────┬────────────┘      │
-│           │                        │                    │
-│  ┌────────▼────────────────────────▼────────────────┐  │
-│  │              shared/                              │  │
-│  │  dedup → analyzer (Claude) → cover-letter → email │  │
-│  └───────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
+[![Job Hunter](https://img.shields.io/github/actions/workflow/status/gabrielrodri33/Jobs-Hunter/job-hunter.yml?label=job-hunter&style=flat-square)](https://github.com/gabrielrodri33/Jobs-Hunter/actions)
+[![Freelance Hunter](https://img.shields.io/github/actions/workflow/status/gabrielrodri33/Jobs-Hunter/freelance-hunter.yml?label=freelance-hunter&style=flat-square)](https://github.com/gabrielrodri33/Jobs-Hunter/actions)
+[![License: MIT](https://img.shields.io/badge/License-MIT-green.svg?style=flat-square)](LICENSE)
+[![Node.js](https://img.shields.io/badge/Node.js-20+-339933?style=flat-square&logo=node.js)](https://nodejs.org)
 
 ---
 
-## Fluxo Job Hunter
+## O que faz
 
-```
-LinkedIn Scraper (Apify)
-        │
-        ▼
-  Dedup (seen-jobs.json)
-        │
-        ▼
-  Analyzer Claude AI
-  ┌─────┴───────┐
-  │             │
-CANDIDATAR   AVALIAR   (IGNORAR → descartado)
-  │
-  ▼
-Cover Letter PT + EN
-  │
-  ▼
-E-mail HTML → seu-email@exemplo.com
-```
+Dois agentes autônomos rodando via GitHub Actions (de graça):
 
-## Fluxo Freelance Hunter
+| Agente | Fonte | Horário | O que entrega |
+|--------|-------|---------|---------------|
+| **job-hunter** | LinkedIn (Apify) | 8h dias úteis | Vagas analisadas + cover letters PT/EN |
+| **freelance-hunter** | Freelancer.com (API nativa) + Upwork + Workana (Apify) | 9h dias úteis | Projetos freelance + propostas PT/EN |
 
-```
-Upwork + Workana + Freelancer.com (paralelo)
-        │
-        ▼
-  Normalizer (schema único)
-        │
-        ▼
-  Dedup cross-platform (id + similaridade de título)
-        │
-        ▼
-  Analyzer Claude AI
-  ┌─────┴───────┐
-  │             │
-ACEITAR      AVALIAR   (IGNORAR → descartado)
-  │
-  ▼
-Ordenar por win_probability
-  │
-  ▼
-Proposta PT + EN
-  │
-  ▼
-E-mail HTML → seu-email@exemplo.com
-```
+Para cada oportunidade você recebe:
+
+- ✅ Score de compatibilidade (CANDIDATAR / AVALIAR / IGNORAR)
+- ✅ Match técnico detalhado
+- ✅ Gaps identificados
+- ✅ Seu diferencial para aquela vaga específica
+- ✅ Cover letter personalizada em português e inglês
+- ✅ Custo da execução (Apify + Anthropic) no rodapé do e-mail
 
 ---
 
-## Estrutura de arquivos
+## Como funciona
 
 ```
-career-hunter/
-├── .github/
-│   └── workflows/
-│       ├── job-hunter.yml          # Roda seg–sex às 11h UTC
-│       └── freelance-hunter.yml    # Roda seg–sex às 12h UTC
-├── src/
-│   ├── shared/
-│   │   ├── profile.js              # ← EDITE AQUI: perfil, prompts
-│   │   ├── analyzer.js             # Claude AI: analisa vagas/projetos
-│   │   ├── cover-letter.js         # Claude AI: gera cover letters
-│   │   ├── email.js                # Resend: monta e envia HTML
-│   │   └── dedup.js                # Evita reprocessar o que já foi visto
-│   ├── job-hunter/
-│   │   ├── index.js                # Orquestrador do Job Hunter
-│   │   └── scrapers/
-│   │       └── linkedin.js         # Apify: curious_coder/linkedin-jobs-scraper
-│   └── freelance-hunter/
-│       ├── index.js                # Orquestrador do Freelance Hunter
-│       ├── normalizer.js           # Converte dados das 3 plataformas
-│       └── scrapers/
-│           ├── upwork.js           # Apify: jupri/upwork
-│           ├── workana.js          # Apify: getdataforme/workana-job-scraper
-│           └── freelancer.js       # API nativa Freelancer.com
-├── data/
-│   ├── seen-jobs.json              # Cache de IDs (gerenciado por GitHub Actions)
-│   └── seen-projects.json          # Cache de IDs (gerenciado por GitHub Actions)
-├── .env.example
-├── .gitignore
-├── package.json
-└── README.md
+GitHub Actions (cron)
+       ↓
+Apify / Freelancer.com API  →  coleta vagas/projetos
+       ↓
+Claude API (Sonnet)  →  analisa compatibilidade + gera cover letters
+       ↓
+Resend  →  e-mail formatado com tudo
 ```
 
 ---
 
 ## Pré-requisitos
 
-| Serviço | Finalidade | Custo |
-|---|---|---|
-| [Apify](https://apify.com) | Scrapers LinkedIn, Upwork, Workana | ~$2–7/mês |
-| [Anthropic](https://console.anthropic.com) | Análise com Claude AI | ~$1–5/mês |
-| [Resend](https://resend.com) | Envio de e-mails | Grátis (3k emails/mês) |
-| [Freelancer.com Developers](https://developers.freelancer.com) | API de projetos | Grátis |
+- Conta [Apify](https://apify.com) (plano gratuito tem créditos iniciais)
+- Conta [Anthropic](https://console.anthropic.com) (mínimo $5 em créditos)
+- Conta [Resend](https://resend.com) (gratuito até 3.000 e-mails/mês)
+- Conta [Freelancer.com Developers](https://developers.freelancer.com) (gratuito)
+- Repositório no GitHub (Actions gratuito para repos públicos)
+
+**Custo estimado: ~$8–14/mês** (Apify ~$5–9 + Anthropic ~$3–5 + o resto gratuito)
 
 ---
 
-## Configuração
+## Configuração — passo a passo
 
-### 1. Clonar e instalar
+### 1. Fork e clone
 
 ```bash
-git clone https://github.com/gabrielrodri33/jobs-hunter.git career-hunter
+git clone https://github.com/gabrielrodri33/Jobs-Hunter.git career-hunter
 cd career-hunter
 npm install
 ```
 
-### 2. Criar `.env` baseado no exemplo
+### 2. Obtenha os tokens
 
-```bash
-cp .env.example .env
+<details>
+<summary><strong>🔑 Apify Token</strong></summary>
+
+1. Acesse [console.apify.com](https://console.apify.com)
+2. Clique no seu avatar → **Settings** → **Integrations**
+3. Copie o **Personal API token**
+
+</details>
+
+<details>
+<summary><strong>🤖 Anthropic API Key</strong></summary>
+
+1. Acesse [console.anthropic.com](https://console.anthropic.com)
+2. Menu lateral → **API Keys** → **Create Key**
+3. Nomeie como `career-hunter` e copie a chave (começa com `sk-ant-`)
+4. Vá em **Billing** → adicione no mínimo $5 em créditos
+
+</details>
+
+<details>
+<summary><strong>📧 Resend API Key</strong></summary>
+
+1. Acesse [resend.com](https://resend.com) e crie uma conta
+2. **API Keys** → **Create API Key**
+3. Para o campo `from`, você pode usar um domínio próprio ou o domínio sandbox do Resend para testes
+
+</details>
+
+<details>
+<summary><strong>💼 Freelancer.com OAuth Token</strong></summary>
+
+1. Acesse [developers.freelancer.com](https://developers.freelancer.com)
+2. **My Apps** → **Create App**
+3. Na aba **OAuth 2.0**, gere um token pessoal com escopos: `basic` e `projects`
+
+</details>
+
+### 3. Configure o seu perfil
+
+Edite **apenas** o arquivo `src/shared/profile.js` com seus dados:
+
+```javascript
+// src/shared/profile.js
+export const CANDIDATE_INFO = {
+  name: 'Seu Nome',
+  location: 'Sua Cidade, País',
+  // ... preencha com sua stack, experiência e formação
+}
 ```
 
-### 3. Obter tokens
+> Este é o único arquivo que você precisa editar. Todos os agentes usam esse perfil como fonte de verdade.
 
-**Apify token**
-1. Acesse [apify.com](https://apify.com) → Sign Up (plano gratuito tem $5 de crédito)
-2. Settings → Integrations → API token
-3. Copie o token para `APIFY_TOKEN`
+### 4. Configure os GitHub Secrets
 
-**Anthropic API key**
-1. Acesse [console.anthropic.com](https://console.anthropic.com)
-2. API Keys → Create Key
-3. Copie para `ANTHROPIC_API_KEY`
+No seu repositório: **Settings** → **Secrets and variables** → **Actions** → **New repository secret**
 
-**Resend API key**
-1. Acesse [resend.com](https://resend.com) → Sign Up
-2. API Keys → Create API Key
-3. Verifique seu domínio em Domains (ou use `onboarding@resend.dev` para testes)
-4. Copie para `RESEND_API_KEY`
-
-**Freelancer.com token (opcional)**
-1. Acesse [developers.freelancer.com](https://developers.freelancer.com)
-2. My Apps → Create new app
-3. OAuth 2.0 → Generate personal access token
-4. Escopos necessários: `basic` e `projects`
-5. Copie para `FREELANCER_TOKEN`
-
----
-
-## GitHub Secrets necessários
-
-Configure em: **Settings → Secrets and variables → Actions → New repository secret**
-
-| Secret | Descrição |
-|---|---|
-| `APIFY_TOKEN` | Token da conta Apify |
-| `ANTHROPIC_API_KEY` | Chave da API Anthropic |
-| `RESEND_API_KEY` | Chave da API Resend |
-| `FREELANCER_TOKEN` | Token OAuth Freelancer.com (opcional) |
+| Secret | Onde obter |
+|--------|-----------|
+| `APIFY_TOKEN` | Apify Console → Settings → Integrations |
+| `ANTHROPIC_API_KEY` | console.anthropic.com → API Keys |
+| `RESEND_API_KEY` | resend.com → API Keys |
+| `FREELANCER_TOKEN` | developers.freelancer.com → OAuth 2.0 |
 | `JOB_EMAIL_FROM` | Ex: `vagas@seudominio.com` |
-| `JOB_EMAIL_TO` | Ex: `seu-email@exemplo.com` |
+| `JOB_EMAIL_TO` | Seu e-mail para receber as vagas |
 | `FREELANCE_EMAIL_FROM` | Ex: `freelance@seudominio.com` |
-| `FREELANCE_EMAIL_TO` | Ex: `seu-email@exemplo.com` |
+| `FREELANCE_EMAIL_TO` | Seu e-mail para receber os projetos |
 
-> Você pode usar o mesmo endereço em `FROM` e `TO` se preferir.
+### 5. Personalize as buscas (opcional)
 
----
+- **Vagas LinkedIn:** edite `SEARCH_URLS` em `src/job-hunter/scrapers/linkedin.js`
+- **Freelancer.com:** edite `FREELANCER_KEYWORDS` em `src/freelance-hunter/scrapers/freelancer.js`
+- **Upwork:** edite `UPWORK_KEYWORDS` em `src/freelance-hunter/scrapers/upwork.js`
+- **Workana:** edite `WORKANA_KEYWORDS` em `src/freelance-hunter/scrapers/workana.js`
 
-## Teste local
+### 6. Primeiro teste local
 
 ```bash
-# Testar Job Hunter
+# Crie o .env baseado no exemplo
+cp .env.example .env
+# Preencha o .env com seus tokens
+
+# Testar job hunter
 npm run dev:jobs
 
-# Testar Freelance Hunter
+# Testar freelance hunter
 npm run dev:freelance
 ```
 
-> Requer Node 20+. O `--env-file=.env` carrega as variáveis automaticamente.
+### 7. Deploy
+
+```bash
+git add .
+git commit -m "chore: configure profile and search preferences"
+git push origin main
+```
+
+Após o push, vá em **Actions** → selecione o workflow → **Run workflow** para testar manualmente antes do primeiro cron.
 
 ---
 
-## Primeiro deploy
+## Estrutura do projeto
 
-```bash
-# 1. Faça push para main
-git push origin main
-
-# 2. Acesse GitHub → Actions → Job Hunter → Run workflow
-# (ou aguarde o próximo dia útil às 11h UTC)
+```
+career-hunter/
+├── .github/workflows/
+│   ├── job-hunter.yml          # Roda dias úteis às 8h (horário Brasília)
+│   └── freelance-hunter.yml    # Roda dias úteis às 9h (horário Brasília)
+├── src/
+│   ├── shared/                 # Módulos compartilhados entre os agentes
+│   │   ├── profile.js          # ← EDITE ESTE com seu perfil
+│   │   ├── analyzer.js         # Análise de compatibilidade via Claude API
+│   │   ├── cover-letter.js     # Geração de cover letters via Claude API
+│   │   ├── email.js            # Templates HTML + envio via Resend
+│   │   ├── dedup.js            # Controle de duplicatas entre execuções
+│   │   └── utils.js            # Retry com backoff, sleep
+│   ├── job-hunter/
+│   │   ├── index.js            # Orquestrador do job hunter
+│   │   └── scrapers/
+│   │       └── linkedin.js     # Apify: curious_coder/linkedin-jobs-scraper
+│   └── freelance-hunter/
+│       ├── index.js            # Orquestrador do freelance hunter
+│       ├── normalizer.js       # Normaliza dados cross-platform
+│       └── scrapers/
+│           ├── freelancer.js   # API nativa Freelancer.com (gratuita)
+│           ├── upwork.js       # Apify: jupri/upwork
+│           └── workana.js      # Apify: getdataforme/workana-job-scraper
+├── data/                       # Gerenciado automaticamente pelo GitHub Actions cache
+│   ├── seen-jobs.json          # IDs de vagas já enviadas
+│   └── seen-projects.json      # IDs de projetos já enviados
+├── .env.example
+└── package.json
 ```
 
 ---
 
 ## Custo estimado mensal
 
-| Serviço | Custo estimado |
-|---|---|
-| Apify (scrapers) | $2 – $7 |
-| Anthropic (Claude) | $1 – $5 |
-| Resend (e-mails) | Grátis |
-| Freelancer.com API | Grátis |
-| **Total** | **~$3 – $12/mês** |
+| Serviço | Uso | Custo |
+|---------|-----|-------|
+| GitHub Actions | 44 execuções (~5–8 min cada) | **Grátis** |
+| Resend | ~40 e-mails/mês | **Grátis** |
+| Freelancer.com API | ~198 chamadas/mês | **Grátis** |
+| Apify (LinkedIn + Upwork + Workana) | ~7.000 resultados/mês | **~$5–9/mês** |
+| Anthropic API (Sonnet) | ~990 análises + ~143 cover letters | **~$3–5/mês** |
+| **Total** | | **~$8–14/mês** |
+
+> 💡 O custo real cai após a primeira semana porque o sistema de deduplicação evita reprocessar vagas já vistas.
 
 ---
 
-## Como personalizar
+## Adaptar para outra stack ou idioma
 
-### Adicionar URLs de busca (LinkedIn)
-Edite `src/job-hunter/scrapers/linkedin.js` → array `SEARCH_URLS`.
-
-### Adicionar keywords (Upwork/Workana/Freelancer)
-Edite `src/freelance-hunter/scrapers/upwork.js` → `UPWORK_KEYWORDS`
-Edite `src/freelance-hunter/scrapers/workana.js` → `WORKANA_KEYWORDS`
-Edite `src/freelance-hunter/scrapers/freelancer.js` → `FREELANCER_KEYWORDS`
-
-### Atualizar perfil
-Edite **apenas** `src/shared/profile.js` — todos os prompts e dados do candidato vivem lá.
+Edite `src/shared/profile.js` — especificamente os campos `stack`, `experience` e os prompts `JOB_ANALYZER_PROMPT` e `FREELANCE_ANALYZER_PROMPT`. Todos os agentes usam esse arquivo como fonte de verdade.
 
 ---
 
-## Troubleshooting
+## Contribuindo
 
-### Upwork ou Workana retornam vazio
-Adicione proxy residencial ao input dos actors no scraper correspondente:
+Contribuições são bem-vindas! Veja [CONTRIBUTING.md](CONTRIBUTING.md).
 
-```javascript
-body: JSON.stringify({
-  searchQuery: keyword,
-  maxItems: 20,
-  type: 'jobs',
-  proxyConfiguration: {
-    useApifyProxy: true,
-    apifyProxyGroups: ['RESIDENTIAL']
-  }
-})
-```
+Ideias para contribuição:
+- Novos scrapers (Indeed, Remote.com, Glassdoor)
+- Suporte a outros idiomas no perfil
+- Dashboard web para visualizar histórico de vagas
+- Integração com Telegram ou WhatsApp
 
-### E-mail não chega
-- Verifique se o domínio está verificado no Resend
-- Para testes use `onboarding@resend.dev` como `FROM` (envia apenas para o e-mail da conta Resend)
+---
 
-### GitHub Actions falha
-- Confirme que os 7 secrets estão configurados
-- Veja os logs em Actions → selecione o run → clique no step com erro
+## Licença
+
+MIT — veja [LICENSE](LICENSE) para detalhes.
+
+---
+
+<p align="center">Feito com ☕ e Claude AI</p>

@@ -1,22 +1,28 @@
 name: Freelance Hunter
 
+# Executa o Freelance Hunter de segunda a sexta às 9h (horário de Brasília = 12h UTC)
+# Para rodar manualmente: Actions → Freelance Hunter → Run workflow
 on:
   schedule:
-    - cron: '0 12 * * 1-5'
-  workflow_dispatch:
+    - cron: '0 12 * * 1-5'  # seg-sex 12h UTC = 9h BRT
+  workflow_dispatch:          # permite execução manual
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
     steps:
+      # Faz checkout do código
       - uses: actions/checkout@v4
 
+      # Configura Node.js 20
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
+      # Instala dependências do projeto
       - run: npm ci
 
+      # Restaura o cache de IDs já vistos para evitar reenvio de projetos duplicados
       - name: Restaurar cache de dedup
         uses: actions/cache@v4
         with:
@@ -24,6 +30,7 @@ jobs:
           key: seen-projects-${{ github.run_id }}
           restore-keys: seen-projects-
 
+      # Executa o Freelance Hunter
       - name: Executar Freelance Hunter
         run: node src/freelance-hunter/index.js
         env:
@@ -34,6 +41,7 @@ jobs:
           FREELANCE_EMAIL_FROM: ${{ secrets.FREELANCE_EMAIL_FROM }}
           FREELANCE_EMAIL_TO: ${{ secrets.FREELANCE_EMAIL_TO }}
 
+      # Salva o cache atualizado mesmo se o passo anterior falhar
       - name: Salvar cache de dedup
         if: always()
         uses: actions/cache@v4

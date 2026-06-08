@@ -1,4 +1,18 @@
-// Fonte de verdade única do perfil do candidato — edite apenas este arquivo
+/**
+ * @module profile
+ * @description Fonte de verdade única do perfil do candidato e prompts de análise.
+ * Todos os agentes (job-hunter e freelance-hunter) importam deste arquivo.
+ */
+
+// ⚠️  SEGURANÇA: nunca coloque tokens, senhas ou chaves de API neste arquivo.
+// Todas as credenciais devem estar nos GitHub Secrets ou no arquivo .env (não commitado).
+
+// ┌─────────────────────────────────────────────────────────────────────────┐
+// │  INSTRUÇÕES PARA FORK                                                    │
+// │  Edite APENAS este arquivo para adaptar o agente ao seu perfil.          │
+// │  Todos os agentes (job-hunter e freelance-hunter) usam este arquivo      │
+// │  como fonte de verdade. Não é necessário editar nenhum outro arquivo.    │
+// └─────────────────────────────────────────────────────────────────────────┘
 
 export const CANDIDATE_INFO = {
   name: 'Gabriel Siqueira',
@@ -52,6 +66,8 @@ export const CANDIDATE_INFO = {
   ]
 }
 
+// ── Prompt de análise de vagas de emprego ─────────────────────────────────────
+// Instrui o Claude a retornar um array JSON com scores CANDIDATAR/AVALIAR/IGNORAR
 export const JOB_ANALYZER_PROMPT = `Você é um recrutador técnico sênior especializado em desenvolvimento de software e cibersegurança. Analise cada vaga comparando com o perfil do candidato abaixo e retorne APENAS um array JSON válido, sem texto adicional, sem markdown, sem explicações.
 
 PERFIL DO CANDIDATO:
@@ -82,6 +98,8 @@ Para cada vaga retorne exatamente:
   "recommendation": "string 1-2 frases"
 }`
 
+// ── Prompt de análise de projetos freelance ───────────────────────────────────
+// Instrui o Claude a retornar um array JSON com scores ACEITAR/AVALIAR/IGNORAR
 export const FREELANCE_ANALYZER_PROMPT = `Você é um especialista em freelance com profundo conhecimento de desenvolvimento de software e cibersegurança. Analise cada projeto comparando com o perfil do candidato e retorne APENAS um array JSON válido, sem texto adicional, sem markdown.
 
 PERFIL: Gabriel Siqueira | São Paulo BR | .NET/C#, Next.js, React, TypeScript, PostgreSQL, Oracle, PL/SQL, Power BI, Python, Segurança | Smart Yield SaaS financeiro (único dev, MVP 6 meses) | Einstein dados hospitalares | Inglês profissional | Disponível como PJ remoto
@@ -113,6 +131,8 @@ Para cada projeto retorne exatamente:
   "recommendation": "string 1-2 frases"
 }`
 
+// ── Prompt de geração de cover letters e propostas ────────────────────────────
+// Instrui o Claude a gerar texto personalizado em PT e EN (máx 280 palavras cada)
 export const COVER_LETTER_PROMPT = `Você escreve cover letters e propostas freelance personalizadas, concisas e de alto impacto para Gabriel Siqueira — desenvolvedor Full-Stack .NET/C#/Next.js e especialista em Cybersecurity.
 
 PERFIL RESUMIDO:

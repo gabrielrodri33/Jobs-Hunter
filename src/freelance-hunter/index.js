@@ -1,3 +1,10 @@
+/**
+ * @module freelance-hunter/index
+ * @description Orquestrador do Freelance Hunter.
+ * Fluxo: scraping Freelancer.com (+ Upwork/Workana quando habilitados) →
+ *        normalização → dedup cross-platform → análise Claude → propostas → e-mail.
+ */
+
 import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
 import { analyzeItems } from '../shared/analyzer.js'
 import { generateCoverLetters } from '../shared/cover-letter.js'
@@ -7,13 +14,22 @@ import { sendFreelanceEmail, sendErrorEmail } from '../shared/email.js'
 import { scrapeFreelancer } from './scrapers/freelancer.js'
 import { normalizeProject } from './normalizer.js'
 
+// Caminho do arquivo de dedup — gerenciado via GitHub Actions cache
 const SEEN_FILE = 'data/seen-projects.json'
 
+// Objeto de uso vazio para scrapers/cover letters desativados
 const EMPTY_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
 
+// Rastreia a etapa atual para incluir no e-mail de erro em caso de falha
 let currentStep = 'inicialização'
 
-// Similaridade Jaccard baseada em conjuntos de palavras
+/**
+ * Calcula similaridade Jaccard entre dois títulos baseada em conjuntos de palavras.
+ * Usado para deduplicar projetos semelhantes entre plataformas diferentes.
+ * @param {string} a - Primeiro título.
+ * @param {string} b - Segundo título.
+ * @returns {number} Score de similaridade entre 0 e 1.
+ */
 function titleSimilarity(a, b) {
   const words = s => new Set(s.toLowerCase().replace(/[^a-z0-9\s]/g, '').split(/\s+/).filter(Boolean))
   const wa = words(a)
@@ -25,6 +41,12 @@ function titleSimilarity(a, b) {
   return intersection / union
 }
 
+/**
+ * Remove projetos duplicados entre plataformas usando similaridade de título (Jaccard > 0.8).
+ * Mantém o primeiro encontrado em caso de duplicata.
+ * @param {Object[]} projects - Projetos normalizados de todas as plataformas.
+ * @returns {Object[]} Projetos sem duplicatas cross-platform.
+ */
 function dedupCrossplatform(projects) {
   const result = []
   for (const project of projects) {
@@ -41,15 +63,17 @@ function dedupCrossplatform(projects) {
 async function main() {
   console.log(`💼 Freelance Hunter iniciado — ${new Date().toISOString()}`)
 
+  // ── 1. Carrega histórico de dedup ──────────────────────────────────────────
   const seenIds = loadSeen(SEEN_FILE)
   console.log(`📋 ${seenIds.length} projetos já vistos no cache`)
 
-  // Valores zerados para scrapers desativados
+  // Valores zerados para scrapers desativados (Upwork e Workana)
   const upworkCost = 0
   const upworkProjects = []
   // const workanaCost = 0   // descomente quando ativar
   // const workanaProjects = []
 
+  // ── 2. Scraping das plataformas ────────────────────────────────────────────
   currentStep = 'scraping Freelancer.com'
   console.log('🔍 Buscando projetos no Freelancer.com...')
   const [freelancerResult] = await Promise.allSettled([
@@ -70,12 +94,14 @@ async function main() {
     console.error(`  ❌ Freelancer.com falhou: ${freelancerResult.reason?.message}`)
   }
 
+  // ── 3. Normalização e dedup ────────────────────────────────────────────────
   const rawProjects = [
     ...platformProjects['Freelancer.com'].map(p => normalizeProject(p, 'Freelancer.com'))
   ]
 
   console.log(`📦 ${rawProjects.length} projetos — Freelancer.com: ${platformProjects['Freelancer.com'].length}`)
 
+  // Dedup cross-platform (remove similares entre plataformas) + dedup histórico
   const deduped = dedupCrossplatform(rawProjects)
   const newProjects = filterNew(deduped, seenIds)
   console.log(`🆕 ${newProjects.length} novos após dedup`)
@@ -85,6 +111,7 @@ async function main() {
     process.exit(0)
   }
 
+  // ── 4. Análise de compatibilidade com Claude ───────────────────────────────
   currentStep = 'análise com Claude'
   console.log('🤖 Analisando com Claude...')
   const { results: analyzed, usage: analyzerUsage } = await analyzeItems(newProjects, 'freelance')
@@ -101,9 +128,10 @@ async function main() {
     process.exit(0)
   }
 
-  // Ordena por win_probability descrescente
+  // Ordena por win_probability descrescente para priorizar melhores oportunidades
   aceitar = aceitar.sort((a, b) => (b.win_probability ?? 0) - (a.win_probability ?? 0))
 
+  // ── 5. Geração de propostas (apenas para ACEITAR) ──────────────────────────
   currentStep = 'geração de propostas'
   let clUsage = EMPTY_USAGE
   let coverLetters = []
@@ -114,6 +142,7 @@ async function main() {
     clUsage = clResult.usage
   }
 
+  // ── 6. Monta resumo de custos da execução ──────────────────────────────────
   const totalScraperCost = upworkCost + freelancerCost
   const usageSummary = {
     scrapers: [
@@ -138,19 +167,23 @@ async function main() {
     totalCostUsd: parseFloat(
       (totalScraperCost + analyzerUsage.costUsd + clUsage.costUsd).toFixed(4)
     ),
+    // Estimativa mensal baseada em 22 dias úteis
     estimatedMonthlyCostUsd: parseFloat(
       ((totalScraperCost + analyzerUsage.costUsd + clUsage.costUsd) * 22).toFixed(2)
     )
   }
 
+  // ── 7. Envio do e-mail ─────────────────────────────────────────────────────
   currentStep = 'envio de e-mail'
   console.log('📧 Enviando e-mail...')
   await sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSummary)
 
+  // Persiste IDs analisados para dedup na próxima execução
   saveSeen(SEEN_FILE, [...seenIds, ...analyzed.map(p => p.id)])
   console.log(`✅ Freelance Hunter concluído! Custo total: $${usageSummary.totalCostUsd}`)
 }
 
+// Tratamento de erro fatal — tenta enviar e-mail de notificação antes de sair
 main().catch(async err => {
   console.error('💥 Erro fatal:', err)
   try {
