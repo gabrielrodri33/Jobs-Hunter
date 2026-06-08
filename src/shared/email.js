@@ -48,6 +48,63 @@ function coverLetterBlock(coverLetter) {
     </div>`
 }
 
+// ── Bloco de uso/custo ────────────────────────────────────────────────────────
+
+function buildUsageBlock(usage) {
+  if (!usage) return ''
+
+  const scraperRows = usage.scrapers.map(s => `
+    <tr>
+      <td style="padding:3px 0;font-size:12px;color:#6b7280;">${s.name}</td>
+      <td style="padding:3px 0;font-size:12px;color:#374151;text-align:right;font-weight:500;">
+        ${s.costUsd > 0 ? `$${s.costUsd.toFixed(4)}` : '<span style="color:#16a34a;">Grátis</span>'}
+      </td>
+      <td style="padding:3px 0;font-size:12px;color:#9ca3af;text-align:right;">${s.items} itens</td>
+    </tr>`).join('')
+
+  const analysisRow = `
+    <tr>
+      <td style="padding:3px 0;font-size:12px;color:#6b7280;">Análise Claude (${usage.anthropic.analysis.items} itens)</td>
+      <td style="padding:3px 0;font-size:12px;color:#374151;text-align:right;font-weight:500;">$${usage.anthropic.analysis.costUsd.toFixed(4)}</td>
+      <td style="padding:3px 0;font-size:12px;color:#9ca3af;text-align:right;">
+        ${(usage.anthropic.analysis.inputTokens / 1000).toFixed(1)}k in / ${(usage.anthropic.analysis.outputTokens / 1000).toFixed(1)}k out
+      </td>
+    </tr>`
+
+  const clRow = usage.anthropic.coverLetters.items > 0 ? `
+    <tr>
+      <td style="padding:3px 0;font-size:12px;color:#6b7280;">Cover letters (${usage.anthropic.coverLetters.items} itens)</td>
+      <td style="padding:3px 0;font-size:12px;color:#374151;text-align:right;font-weight:500;">$${usage.anthropic.coverLetters.costUsd.toFixed(4)}</td>
+      <td style="padding:3px 0;font-size:12px;color:#9ca3af;text-align:right;">
+        ${(usage.anthropic.coverLetters.inputTokens / 1000).toFixed(1)}k in / ${(usage.anthropic.coverLetters.outputTokens / 1000).toFixed(1)}k out
+      </td>
+    </tr>` : ''
+
+  return `
+    <div style="margin-top:32px;padding:20px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:10px;">
+      <p style="margin:0 0 12px 0;font-size:13px;font-weight:700;color:#374151;">&#128202; Uso desta execução</p>
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr>
+            <th style="text-align:left;font-size:11px;color:#9ca3af;font-weight:500;padding-bottom:6px;border-bottom:1px solid #e5e7eb;">Serviço</th>
+            <th style="text-align:right;font-size:11px;color:#9ca3af;font-weight:500;padding-bottom:6px;border-bottom:1px solid #e5e7eb;">Custo</th>
+            <th style="text-align:right;font-size:11px;color:#9ca3af;font-weight:500;padding-bottom:6px;border-bottom:1px solid #e5e7eb;">Detalhes</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${scraperRows}
+          ${analysisRow}
+          ${clRow}
+          <tr style="border-top:1px solid #e5e7eb;">
+            <td style="padding-top:8px;font-size:13px;font-weight:700;color:#111827;">Total desta execução</td>
+            <td style="padding-top:8px;font-size:13px;font-weight:700;color:#16a34a;text-align:right;">$${usage.totalCostUsd.toFixed(4)}</td>
+            <td style="padding-top:8px;font-size:12px;color:#9ca3af;text-align:right;">~$${usage.estimatedMonthlyCostUsd}/mês</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>`
+}
+
 // ── Card: vaga de emprego ─────────────────────────────────────────────────────
 
 function buildJobCard(job, coverLetter) {
@@ -115,7 +172,7 @@ function buildFreelanceCard(project, coverLetter) {
 
 // ── Template base ─────────────────────────────────────────────────────────────
 
-function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, sections, footerDate }) {
+function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, sections, footerDate, usageSummary }) {
   const summaryHtml = `<table cellpadding="0" cellspacing="0" border="0" style="margin-bottom:24px;"><tr>${
     summaryCards.map(c => `
     <td style="padding-right:12px;vertical-align:top;">
@@ -145,6 +202,8 @@ function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, s
 
     ${sectionsHtml}
 
+    ${usageSummary ? buildUsageBlock(usageSummary) : ''}
+
     <div style="margin-top:40px;padding-top:16px;border-top:1px solid #e5e7eb;text-align:center;font-size:12px;color:#9ca3af;">
       career-hunter · <a href="https://github.com/gabrielrodri33" style="color:#6b7280;">github.com/gabrielrodri33</a> · ${footerDate}
     </div>
@@ -155,7 +214,7 @@ function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, s
 
 // ── Funções públicas ──────────────────────────────────────────────────────────
 
-export async function sendJobsEmail(candidatar, avaliar, coverLetters) {
+export async function sendJobsEmail(candidatar, avaliar, coverLetters, usageSummary) {
   const resend = new Resend(process.env.RESEND_API_KEY)
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
@@ -178,7 +237,8 @@ export async function sendJobsEmail(candidatar, avaliar, coverLetters) {
       { value: candidatar.length + avaliar.length, label: 'Total relevantes', color: '#2563eb' }
     ],
     sections,
-    footerDate: now
+    footerDate: now,
+    usageSummary
   })
 
   await resend.emails.send({
@@ -189,7 +249,7 @@ export async function sendJobsEmail(candidatar, avaliar, coverLetters) {
   })
 }
 
-export async function sendFreelanceEmail(aceitar, avaliar, coverLetters) {
+export async function sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSummary) {
   const resend = new Resend(process.env.RESEND_API_KEY)
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
@@ -212,13 +272,62 @@ export async function sendFreelanceEmail(aceitar, avaliar, coverLetters) {
       { value: aceitar.length + avaliar.length, label: 'Total relevantes', color: '#6d28d9' }
     ],
     sections,
-    footerDate: now
+    footerDate: now,
+    usageSummary
   })
 
   await resend.emails.send({
     from: process.env.FREELANCE_EMAIL_FROM,
     to: process.env.FREELANCE_EMAIL_TO,
     subject: `💼 ${aceitar.length} projetos para proposta + ${avaliar.length} para avaliar — ${now}`,
+    html
+  })
+}
+
+export async function sendErrorEmail({ agent, error, step, timestamp }) {
+  const resend = new Resend(process.env.RESEND_API_KEY)
+
+  const emailFrom = agent === 'job-hunter'
+    ? process.env.JOB_EMAIL_FROM
+    : process.env.FREELANCE_EMAIL_FROM
+
+  const emailTo = agent === 'job-hunter'
+    ? process.env.JOB_EMAIL_TO
+    : process.env.FREELANCE_EMAIL_TO
+
+  if (!emailFrom || !emailTo) return
+
+  const html = `<!DOCTYPE html>
+<html lang="pt-BR">
+<head><meta charset="UTF-8"></head>
+<body style="margin:0;padding:0;background:#f9fafb;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;">
+  <div style="max-width:680px;margin:0 auto;padding:24px 16px;">
+    <div style="background:#dc2626;border-radius:12px;padding:28px 32px;margin-bottom:24px;color:#fff;">
+      <h1 style="margin:0;font-size:22px;">&#128165; Falha no ${agent}</h1>
+      <p style="margin:8px 0 0 0;opacity:.85;font-size:14px;">${new Date(timestamp).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}</p>
+    </div>
+    <div style="background:#fff;border:1px solid #fca5a5;border-radius:10px;padding:20px;">
+      <p style="margin:0 0 8px 0;font-size:13px;color:#6b7280;">Passo onde falhou:</p>
+      <p style="margin:0 0 16px 0;font-size:14px;font-weight:600;color:#111827;">${step ?? 'Não identificado'}</p>
+      <p style="margin:0 0 8px 0;font-size:13px;color:#6b7280;">Erro:</p>
+      <div style="background:#fef2f2;border-left:4px solid #dc2626;padding:12px 16px;border-radius:4px;">
+        <pre style="margin:0;font-size:12px;color:#7f1d1d;white-space:pre-wrap;word-break:break-all;">${error}</pre>
+      </div>
+      <p style="margin:16px 0 0 0;font-size:12px;color:#9ca3af;">
+        Verifique os logs completos em: GitHub Actions → ${agent} → última execução
+      </p>
+    </div>
+    <div style="margin-top:24px;text-align:center;font-size:12px;color:#9ca3af;">
+      career-hunter · github.com/gabrielrodri33
+    </div>
+  </div>
+</body>
+</html>`
+
+  await resend.emails.send({
+    from: emailFrom,
+    to: emailTo,
+    subject: `&#128165; [career-hunter] Falha no ${agent} — ${new Date(timestamp).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,
     html
   })
 }

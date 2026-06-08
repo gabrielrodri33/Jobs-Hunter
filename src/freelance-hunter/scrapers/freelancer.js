@@ -1,6 +1,8 @@
 // Documentação: https://developers.freelancer.com
 // Token: developers.freelancer.com → criar app → OAuth 2.0 → gerar token pessoal (scopo: basic + projects)
 
+import { withRetry } from '../../shared/utils.js'
+
 const FREELANCER_API = 'https://www.freelancer.com/api/projects/0.1/projects/'
 const KEYWORD_DELAY_MS = 1500
 
@@ -21,7 +23,7 @@ export async function scrapeFreelancer() {
 
   if (!token) {
     console.warn('  ⚠️  FREELANCER_TOKEN não definido — pulando Freelancer.com')
-    return []
+    return { projects: [], apifyCostUsd: 0, apiCallsCount: 0 }
   }
 
   const allProjects = []
@@ -40,17 +42,16 @@ export async function scrapeFreelancer() {
         sort_field: 'time_updated'
       })
 
-      const res = await fetch(`${FREELANCER_API}?${params}`, {
-        headers: { 'freelancer-oauth-v1': token }
-      })
+      const data = await withRetry(() =>
+        fetch(`${FREELANCER_API}?${params}`, {
+          headers: { 'freelancer-oauth-v1': token }
+        }).then(r => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`)
+          return r.json()
+        })
+      )
 
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${await res.text()}`)
-      }
-
-      const data = await res.json()
       const projects = data?.result?.projects ?? []
-
       allProjects.push(...projects)
     } catch (err) {
       console.error(`  ❌ Freelancer.com erro "${keyword}": ${err.message}`)
@@ -59,5 +60,9 @@ export async function scrapeFreelancer() {
     await new Promise(r => setTimeout(r, KEYWORD_DELAY_MS))
   }
 
-  return allProjects
+  return {
+    projects: allProjects,
+    apifyCostUsd: 0, // API gratuita
+    apiCallsCount: FREELANCER_KEYWORDS.length
+  }
 }

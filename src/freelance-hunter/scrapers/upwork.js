@@ -1,3 +1,5 @@
+import { withRetry } from '../../shared/utils.js'
+
 const APIFY_BASE = 'https://api.apify.com/v2'
 const ACTOR_ID = 'jupri~upwork'
 const POLL_INTERVAL_MS = 10000
@@ -15,6 +17,16 @@ export const UPWORK_KEYWORDS = [
   'SaaS development .NET',
   'API integration .NET'
 ]
+
+async function getRunCost(runId, token) {
+  try {
+    const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${token}`)
+    const data = await res.json()
+    return data.data?.usageUsd ?? 0
+  } catch {
+    return 0
+  }
+}
 
 async function pollRun(runId, token) {
   const deadline = Date.now() + TIMEOUT_MS
@@ -37,22 +49,25 @@ async function pollRun(runId, token) {
 export async function scrapeUpwork() {
   const token = process.env.APIFY_TOKEN
   const allProjects = []
+  let totalCost = 0
 
   for (const keyword of UPWORK_KEYWORDS) {
     try {
       console.log(`  🔎 Upwork: "${keyword}"`)
 
-      const runRes = await fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ searchQuery: keyword, maxItems: 20, type: 'jobs' })
-      })
+      const runData = await withRetry(() =>
+        fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ searchQuery: keyword, maxItems: 20, type: 'jobs' })
+        }).then(r => r.json())
+      )
 
-      const runData = await runRes.json()
       const runId = runData.data?.id
       if (!runId) throw new Error(`Falha ao iniciar: ${JSON.stringify(runData)}`)
 
       const datasetId = await pollRun(runId, token)
+      totalCost += await getRunCost(runId, token)
 
       const itemsRes = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=20&clean=true`)
       const items = await itemsRes.json()
@@ -65,5 +80,8 @@ export async function scrapeUpwork() {
     await new Promise(r => setTimeout(r, KEYWORD_DELAY_MS))
   }
 
-  return allProjects
+  return {
+    projects: allProjects,
+    apifyCostUsd: totalCost
+  }
 }

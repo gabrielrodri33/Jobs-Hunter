@@ -1,11 +1,8 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { COVER_LETTER_PROMPT } from './profile.js'
+import { sleep, withRetry } from './utils.js'
 
 const ITEM_DELAY_MS = 1500
-
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms))
-}
 
 function cleanJsonString(str) {
   return str.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
@@ -30,6 +27,8 @@ Retorne apenas JSON: {"pt": "...", "en": "..."}`
 export async function generateCoverLetters(items, type) {
   const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   const results = []
+  let totalInputTokens = 0
+  let totalOutputTokens = 0
 
   for (let i = 0; i < items.length; i++) {
     const item = items[i]
@@ -38,12 +37,17 @@ export async function generateCoverLetters(items, type) {
     try {
       const userContent = type === 'job' ? buildJobPrompt(item) : buildFreelancePrompt(item)
 
-      const message = await client.messages.create({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 1500,
-        system: COVER_LETTER_PROMPT,
-        messages: [{ role: 'user', content: userContent }]
-      })
+      const message = await withRetry(() =>
+        client.messages.create({
+          model: 'claude-sonnet-4-5',
+          max_tokens: 1500,
+          system: COVER_LETTER_PROMPT,
+          messages: [{ role: 'user', content: userContent }]
+        })
+      )
+
+      totalInputTokens += message.usage?.input_tokens ?? 0
+      totalOutputTokens += message.usage?.output_tokens ?? 0
 
       const raw = message.content[0].text
       const cleaned = cleanJsonString(raw)
@@ -68,5 +72,14 @@ export async function generateCoverLetters(items, type) {
     }
   }
 
-  return results
+  return {
+    results,
+    usage: {
+      inputTokens: totalInputTokens,
+      outputTokens: totalOutputTokens,
+      costUsd: parseFloat(
+        (totalInputTokens * 0.000003 + totalOutputTokens * 0.000015).toFixed(4)
+      )
+    }
+  }
 }
