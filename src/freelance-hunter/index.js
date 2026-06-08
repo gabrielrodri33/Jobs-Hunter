@@ -2,8 +2,8 @@ import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
 import { analyzeItems } from '../shared/analyzer.js'
 import { generateCoverLetters } from '../shared/cover-letter.js'
 import { sendFreelanceEmail } from '../shared/email.js'
-import { scrapeUpwork } from './scrapers/upwork.js'
-import { scrapeWorkana } from './scrapers/workana.js'
+// import { scrapeUpwork } from './scrapers/upwork.js'    // desabilitado temporariamente
+// import { scrapeWorkana } from './scrapers/workana.js'  // desabilitado temporariamente
 import { scrapeFreelancer } from './scrapers/freelancer.js'
 import { normalizeProject } from './normalizer.js'
 
@@ -43,42 +43,27 @@ async function main() {
   const seenIds = loadSeen(SEEN_FILE)
   console.log(`📋 ${seenIds.length} projetos já vistos no cache`)
 
-  console.log('🔍 Iniciando scrapers em paralelo...')
-  const [upworkResult, workanaResult, freelancerResult] = await Promise.allSettled([
-    scrapeUpwork(),
-    scrapeWorkana(),
+  console.log('🔍 Buscando projetos no Freelancer.com...')
+  const [freelancerResult] = await Promise.allSettled([
     scrapeFreelancer()
+    // scrapeUpwork()   — desabilitado
+    // scrapeWorkana()  — desabilitado
   ])
 
-  const scraperStatus = [
-    { name: 'Upwork', result: upworkResult },
-    { name: 'Workana', result: workanaResult },
-    { name: 'Freelancer.com', result: freelancerResult }
-  ]
+  const platformProjects = { 'Freelancer.com': [] }
 
-  const platformProjects = { Upwork: [], Workana: [], 'Freelancer.com': [] }
-
-  for (const { name, result } of scraperStatus) {
-    if (result.status === 'fulfilled') {
-      console.log(`  ✅ ${name}: ${result.value.length} projetos`)
-      platformProjects[name] = result.value
-    } else {
-      console.error(`  ❌ ${name} falhou: ${result.reason?.message}`)
-    }
+  if (freelancerResult.status === 'fulfilled') {
+    console.log(`  ✅ Freelancer.com: ${freelancerResult.value.length} projetos`)
+    platformProjects['Freelancer.com'] = freelancerResult.value
+  } else {
+    console.error(`  ❌ Freelancer.com falhou: ${freelancerResult.reason?.message}`)
   }
 
   const rawProjects = [
-    ...platformProjects['Upwork'].map(p => normalizeProject(p, 'Upwork')),
-    ...platformProjects['Workana'].map(p => normalizeProject(p, 'Workana')),
     ...platformProjects['Freelancer.com'].map(p => normalizeProject(p, 'Freelancer.com'))
   ]
 
-  console.log(
-    `📦 ${rawProjects.length} projetos — ` +
-    `Upwork: ${platformProjects['Upwork'].length} | ` +
-    `Workana: ${platformProjects['Workana'].length} | ` +
-    `Freelancer.com: ${platformProjects['Freelancer.com'].length}`
-  )
+  console.log(`📦 ${rawProjects.length} projetos — Freelancer.com: ${platformProjects['Freelancer.com'].length}`)
 
   const deduped = dedupCrossplatform(rawProjects)
   const newProjects = filterNew(deduped, seenIds)
