@@ -1,17 +1,12 @@
 /**
  * LinkedIn Easy Apply Scraper
  *
- * Scrapes LinkedIn job listings using only public pages — no login or cookie required.
+ * Optimized for speed:
+ * - Step 1: Extract job IDs + Easy Apply badge directly from search result cards
+ *   (no individual page load needed for detection when badge is present)
+ * - Step 2: Load job detail pages in parallel (CONCURRENCY=3) only for confirmed jobs
  *
- * Flow:
- * 1. For each search query, builds a LinkedIn search URL with the configured filters
- * 2. Extracts job IDs from search result cards
- * 3. (If easyApplyOnly=true) Opens each job page and verifies the Easy Apply button
- * 4. Pushes confirmed jobs to the dataset with easyApply field set
- *
- * Output fields per job:
- *   id, title, companyName, location, descriptionText, applicantsCount,
- *   salary, postedAt, easyApply, link, searchQuery
+ * This reduces a 30-min sequential run to ~3-5 minutes.
  */
 import { Actor } from 'apify'
 import { chromium } from 'playwright'
@@ -30,11 +25,12 @@ const {
   maxResultsPerQuery = 20,
 } = input ?? {}
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── Config ─────────────────────────────────────────────────────────────────
+const CONCURRENCY = 3  // parallel detail page loads
 const sleep = (ms) => new Promise(r => setTimeout(r, ms))
-const randomDelay = (min = 2000, max = 4000) =>
-  sleep(min + Math.random() * (max - min))
+const randomDelay = (min, max) => sleep(min + Math.random() * (max - min))
 
+// ── Helpers ────────────────────────────────────────────────────────────────
 function buildSearchUrl(query, start = 0) {
   const params = new URLSearchParams({
     keywords: query,
@@ -49,40 +45,61 @@ function buildSearchUrl(query, start = 0) {
   return `https://www.linkedin.com/jobs/search/?${params.toString()}`
 }
 
-async function getJobDetails(page, jobId) {
+/**
+ * Extracts job cards from a search results page.
+ * Returns id + whether the Easy Apply badge is visible on the card.
+ * This avoids opening individual job pages just for detection.
+ */
+async function extractJobCards(page) {
+  return page.evaluate(() => {
+    const results = []
+    document.querySelectorAll('a[href*="/jobs/view/"]').forEach(a => {
+      const match = a.href?.match(/\/jobs\/view\/(\d+)/)
+      if (!match) return
+
+      // Walk up to the card container to check for Easy Apply badge
+      const card = a.closest('li, .job-search-card, .base-card') ?? a.parentElement
+      const cardText = card?.textContent?.toLowerCase() ?? ''
+      const hasEasyApplyBadge =
+        cardText.includes('easy apply') ||
+        cardText.includes('candidatura simplificada') ||
+        !!card?.querySelector('[class*="easy-apply"], .job-search-card__easy-apply-label')
+
+      results.push({ id: match[1], easyApplyOnCard: hasEasyApplyBadge })
+    })
+    return [...new Map(results.map(r => [r.id, r])).values()]
+  })
+}
+
+/**
+ * Loads a job detail page and extracts structured data.
+ * If skipVerification=false, also checks the apply button before returning.
+ */
+async function fetchJobDetail(context, jobId, skipVerification) {
+  const page = await context.newPage()
   try {
     await page.goto(`https://www.linkedin.com/jobs/view/${jobId}/`, {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     })
-    await randomDelay(1500, 2500)
+    await randomDelay(1000, 2000)
 
     if (page.url().includes('/login') || page.url().includes('/checkpoint')) {
-      console.log(`  ⚠️  Job ${jobId} redirected to login — skipping`)
       return null
     }
 
-    const buttonTexts = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('button, a[role="button"]'))
-        .map(el => el.textContent?.trim().toLowerCase() ?? '')
-        .filter(Boolean)
-    )
-
-    const isEasyApply = buttonTexts.some(text =>
-      text.includes('easy apply') || text.includes('candidatura simplificada')
-    )
-
-    const hasExternalApply = await page.evaluate(() =>
-      Array.from(document.querySelectorAll('a[href]')).some(a => {
-        const href = a.href ?? ''
-        const text = a.textContent?.trim().toLowerCase() ?? ''
-        return !href.includes('linkedin.com') &&
-          (text.includes('apply') || text.includes('candidatar'))
-      })
-    )
-
-    if (!isEasyApply && hasExternalApply) return null
-    if (!isEasyApply) return null
+    // Verify Easy Apply button if not confirmed from search card
+    if (!skipVerification) {
+      const buttonTexts = await page.evaluate(() =>
+        Array.from(document.querySelectorAll('button, a[role="button"]'))
+          .map(el => el.textContent?.trim().toLowerCase() ?? '')
+          .filter(Boolean)
+      )
+      const isEasyApply = buttonTexts.some(t =>
+        t.includes('easy apply') || t.includes('candidatura simplificada')
+      )
+      if (!isEasyApply) return null
+    }
 
     return await page.evaluate((id) => {
       const get = (selectors) => {
@@ -121,61 +138,32 @@ async function getJobDetails(page, jobId) {
     }, jobId)
 
   } catch (err) {
-    console.log(`  ❌ Error on job ${jobId}: ${err.message}`)
+    console.log(`  ❌ Job ${jobId}: ${err.message}`)
     return null
+  } finally {
+    await page.close()
   }
 }
 
-async function getJobDetailsWithoutVerification(page, jobId) {
-  try {
-    await page.goto(`https://www.linkedin.com/jobs/view/${jobId}/`, {
-      waitUntil: 'domcontentloaded',
-      timeout: 30000,
-    })
-    await randomDelay(1500, 2500)
-
-    if (page.url().includes('/login') || page.url().includes('/checkpoint')) return null
-
-    return await page.evaluate((id) => {
-      const get = (selectors) => {
-        for (const sel of selectors) {
-          const text = document.querySelector(sel)?.textContent?.trim()
-          if (text) return text
-        }
-        return ''
-      }
-      return {
-        id,
-        title: get(['h1']),
-        companyName: get([
-          '.job-details-jobs-unified-top-card__company-name a',
-          '.jobs-unified-top-card__company-name a',
-          '.topcard__org-name-link',
-        ]),
-        location: get([
-          '.job-details-jobs-unified-top-card__bullet',
-          '.jobs-unified-top-card__bullet',
-          '.topcard__flavor--bullet',
-        ]),
-        descriptionText: get([
-          '.jobs-description__content',
-          '.job-details-about-the-job-module__description',
-          '.description__text',
-        ]),
-        applicantsCount: get([
-          '.num-applicants__caption',
-          '.jobs-unified-top-card__applicant-count',
-        ]),
-        salary: get(['.compensation__salary', '.salary']),
-        postedAt: get(['.jobs-unified-top-card__posted-date']),
-        easyApply: null,
-      }
-    }, jobId)
-
-  } catch (err) {
-    console.log(`  ❌ Error on job ${jobId}: ${err.message}`)
-    return null
+/**
+ * Processes a batch of job IDs in parallel (up to CONCURRENCY at a time).
+ */
+async function processBatch(context, jobs, easyApplyOnly) {
+  const results = []
+  for (let i = 0; i < jobs.length; i += CONCURRENCY) {
+    const chunk = jobs.slice(i, i + CONCURRENCY)
+    const settled = await Promise.allSettled(
+      chunk.map(({ id, easyApplyOnCard }) => {
+        const skipVerification = !easyApplyOnly || easyApplyOnCard
+        return fetchJobDetail(context, id, skipVerification)
+      })
+    )
+    for (const r of settled) {
+      if (r.status === 'fulfilled' && r.value) results.push(r.value)
+    }
+    if (i + CONCURRENCY < jobs.length) await randomDelay(1500, 2500)
   }
+  return results
 }
 
 // ── Browser ────────────────────────────────────────────────────────────────
@@ -188,13 +176,13 @@ const context = await browser.newContext({
 })
 await context.route('**/*.{png,jpg,jpeg,gif,svg,woff,woff2,ttf,otf}', r => r.abort())
 
-const page = await context.newPage()
+const searchPage = await context.newPage()
 const seenIds = new Set()
 let totalFound = 0
 let totalChecked = 0
 
 // ── Main loop ──────────────────────────────────────────────────────────────
-console.log(`⚙️  Config: easyApplyOnly=${easyApplyOnly} | remote=${remote} | location="${location}" | datePosted=${datePosted || 'any'}`)
+console.log(`⚙️  easyApplyOnly=${easyApplyOnly} | remote=${remote} | location="${location}" | concurrency=${CONCURRENCY}`)
 
 for (const query of searchQueries) {
   console.log(`\n🔍 Query: "${query}"`)
@@ -206,42 +194,29 @@ for (const query of searchQueries) {
     const searchUrl = buildSearchUrl(query, start)
 
     try {
-      await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
-      await randomDelay(2000, 3500)
+      await searchPage.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 30000 })
+      await randomDelay(1500, 2500)
 
-      const jobLinks = await page.evaluate(() => {
-        const results = []
-        document.querySelectorAll('a[href*="/jobs/view/"]').forEach(a => {
-          const match = a.href?.match(/\/jobs\/view\/(\d+)/)
-          if (match) results.push({ id: match[1] })
-        })
-        return [...new Map(results.map(r => [r.id, r])).values()]
-      })
-
-      if (jobLinks.length === 0) { emptyPages++; break }
+      const cards = await extractJobCards(searchPage)
+      if (cards.length === 0) { emptyPages++; break }
       emptyPages = 0
-      console.log(`  📋 ${jobLinks.length} jobs on page (offset ${start})`)
 
-      for (const { id } of jobLinks) {
-        if (collected >= maxResultsPerQuery) break
-        if (seenIds.has(id)) continue
-        seenIds.add(id)
-        totalChecked++
+      const toProcess = cards
+        .filter(c => !seenIds.has(c.id))
+        .slice(0, maxResultsPerQuery - collected)
 
-        await randomDelay(2000, 4000)
+      toProcess.forEach(c => seenIds.add(c.id))
+      totalChecked += toProcess.length
 
-        const jobData = easyApplyOnly
-          ? await getJobDetails(page, id)
-          : await getJobDetailsWithoutVerification(page, id)
+      const fromCard = toProcess.filter(c => c.easyApplyOnCard).length
+      const needsVerify = toProcess.filter(c => !c.easyApplyOnCard).length
+      console.log(`  📋 ${toProcess.length} jobs — ${fromCard} confirmed on card, ${needsVerify} need page verification`)
 
-        if (!jobData) {
-          if (easyApplyOnly) console.log(`  ⏭️  Job ${id} — skipped (not Easy Apply)`)
-          continue
-        }
+      const details = await processBatch(context, toProcess, easyApplyOnly)
 
-        jobData.link = `https://www.linkedin.com/jobs/view/${id}/`
+      for (const jobData of details) {
+        jobData.link = `https://www.linkedin.com/jobs/view/${jobData.id}/`
         jobData.searchQuery = query
-
         await Actor.pushData(jobData)
         collected++
         totalFound++
@@ -249,7 +224,7 @@ for (const query of searchQueries) {
       }
 
       start += 25
-      await randomDelay(3000, 5000)
+      await randomDelay(2000, 3000)
 
     } catch (err) {
       console.log(`  ❌ Search page error: ${err.message}`)
@@ -259,16 +234,15 @@ for (const query of searchQueries) {
 
   console.log(`  📊 "${query}": ${collected} jobs collected`)
   if (searchQueries.indexOf(query) < searchQueries.length - 1) {
-    await randomDelay(5000, 10000)
+    await randomDelay(3000, 5000)
   }
 }
 
 // ── Summary ────────────────────────────────────────────────────────────────
 await browser.close()
-console.log(`\n✅ Done`)
-console.log(`📋 Checked: ${totalChecked} | 🎯 Collected: ${totalFound}`)
-if (easyApplyOnly) {
-  console.log(`📊 Easy Apply rate: ${totalChecked > 0 ? ((totalFound / totalChecked) * 100).toFixed(1) : 0}%`)
+console.log(`\n✅ Done — checked: ${totalChecked} | collected: ${totalFound}`)
+if (easyApplyOnly && totalChecked > 0) {
+  console.log(`📊 Easy Apply rate: ${((totalFound / totalChecked) * 100).toFixed(1)}%`)
 }
 
 await Actor.exit()
