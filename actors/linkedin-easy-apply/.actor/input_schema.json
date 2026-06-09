@@ -20,16 +20,19 @@
     "location": {
       "title": "Location",
       "type": "string",
+      "description": "City, state or country to filter job listings (e.g. Brazil, United States, Portugal).",
       "default": "Brazil"
     },
     "remote": {
       "title": "Remote only",
       "type": "boolean",
+      "description": "When true, filters results to remote jobs only.",
       "default": true
     },
     "datePosted": {
       "title": "Date posted",
       "type": "string",
+      "description": "Filter jobs by how recently they were posted.",
       "editor": "select",
       "enum": ["r86400", "r604800", "r2592000"],
       "enumTitles": ["Last 24 hours", "Last week", "Last month"],
@@ -38,6 +41,7 @@
     "maxResultsPerQuery": {
       "title": "Max results per query",
       "type": "integer",
+      "description": "Maximum number of Easy Apply jobs to collect per search query.",
       "default": 20,
       "minimum": 1,
       "maximum": 100
