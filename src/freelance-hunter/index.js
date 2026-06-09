@@ -1,7 +1,7 @@
 /**
  * @module freelance-hunter/index
  * @description Orquestrador do Freelance Hunter.
- * Fluxo: scraping Freelancer.com (+ Upwork/Workana quando habilitados) →
+ * Fluxo: scraping Upwork + Workana + Freelancer.com (falhas individuais não interrompem) →
  *        normalização → dedup cross-platform → análise Claude → propostas → e-mail.
  */
 
@@ -9,8 +9,8 @@ import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
 import { analyzeItems } from '../shared/analyzer.js'
 import { generateCoverLetters } from '../shared/cover-letter.js'
 import { sendFreelanceEmail, sendErrorEmail } from '../shared/email.js'
-// import { scrapeUpwork } from './scrapers/upwork.js'    // desabilitado temporariamente
-// import { scrapeWorkana } from './scrapers/workana.js'  // desabilitado temporariamente
+import { scrapeUpwork } from './scrapers/upwork.js'
+import { scrapeWorkana } from './scrapers/workana.js'
 import { scrapeFreelancer } from './scrapers/freelancer.js'
 import { normalizeProject } from './normalizer.js'
 
@@ -67,23 +67,37 @@ async function main() {
   const seenIds = loadSeen(SEEN_FILE)
   console.log(`📋 ${seenIds.length} projetos já vistos no cache`)
 
-  // Valores zerados para scrapers desativados (Upwork e Workana)
-  const upworkCost = 0
-  const upworkProjects = []
-  // const workanaCost = 0   // descomente quando ativar
-  // const workanaProjects = []
-
   // ── 2. Scraping das plataformas ────────────────────────────────────────────
-  currentStep = 'scraping Freelancer.com'
-  console.log('🔍 Buscando projetos no Freelancer.com...')
-  const [freelancerResult] = await Promise.allSettled([
+  currentStep = 'scraping plataformas'
+  console.log('🔍 Buscando projetos nas plataformas...')
+  const [upworkResult, workanaResult, freelancerResult] = await Promise.allSettled([
+    scrapeUpwork(),
+    scrapeWorkana(),
     scrapeFreelancer()
-    // scrapeUpwork()   — desabilitado
-    // scrapeWorkana()  — desabilitado
   ])
 
-  const platformProjects = { Upwork: upworkProjects, Workana: [], 'Freelancer.com': [] }
+  const platformProjects = { Upwork: [], Workana: [], 'Freelancer.com': [] }
+  let upworkCost = 0
+  let workanaCost = 0
   let freelancerCost = 0
+
+  if (upworkResult.status === 'fulfilled') {
+    const { projects, apifyCostUsd } = upworkResult.value
+    console.log(`  ✅ Upwork: ${projects.length} projetos`)
+    platformProjects['Upwork'] = projects
+    upworkCost = apifyCostUsd
+  } else {
+    console.warn(`  ⚠️  Upwork falhou (continuando): ${upworkResult.reason?.message}`)
+  }
+
+  if (workanaResult.status === 'fulfilled') {
+    const { projects, apifyCostUsd } = workanaResult.value
+    console.log(`  ✅ Workana: ${projects.length} projetos`)
+    platformProjects['Workana'] = projects
+    workanaCost = apifyCostUsd
+  } else {
+    console.warn(`  ⚠️  Workana falhou (continuando): ${workanaResult.reason?.message}`)
+  }
 
   if (freelancerResult.status === 'fulfilled') {
     const { projects, apifyCostUsd } = freelancerResult.value
@@ -91,15 +105,17 @@ async function main() {
     platformProjects['Freelancer.com'] = projects
     freelancerCost = apifyCostUsd
   } else {
-    console.error(`  ❌ Freelancer.com falhou: ${freelancerResult.reason?.message}`)
+    console.warn(`  ⚠️  Freelancer.com falhou (continuando): ${freelancerResult.reason?.message}`)
   }
 
   // ── 3. Normalização e dedup ────────────────────────────────────────────────
   const rawProjects = [
+    ...platformProjects['Upwork'].map(p => normalizeProject(p, 'Upwork')),
+    ...platformProjects['Workana'].map(p => normalizeProject(p, 'Workana')),
     ...platformProjects['Freelancer.com'].map(p => normalizeProject(p, 'Freelancer.com'))
   ]
 
-  console.log(`📦 ${rawProjects.length} projetos — Freelancer.com: ${platformProjects['Freelancer.com'].length}`)
+  console.log(`📦 ${rawProjects.length} projetos — Upwork: ${platformProjects['Upwork'].length} | Workana: ${platformProjects['Workana'].length} | Freelancer.com: ${platformProjects['Freelancer.com'].length}`)
 
   // Dedup cross-platform (remove similares entre plataformas) + dedup histórico
   const deduped = dedupCrossplatform(rawProjects)
@@ -143,11 +159,11 @@ async function main() {
   }
 
   // ── 6. Monta resumo de custos da execução ──────────────────────────────────
-  const totalScraperCost = upworkCost + freelancerCost
+  const totalScraperCost = upworkCost + workanaCost + freelancerCost
   const usageSummary = {
     scrapers: [
-      { name: 'Upwork (Apify)', costUsd: upworkCost, items: upworkProjects.length },
-      { name: 'Workana (Apify)', costUsd: 0, items: platformProjects['Workana'].length },
+      { name: 'Upwork (Apify)', costUsd: upworkCost, items: platformProjects['Upwork'].length },
+      { name: 'Workana (Apify)', costUsd: workanaCost, items: platformProjects['Workana'].length },
       { name: 'Freelancer.com (API nativa)', costUsd: freelancerCost, items: platformProjects['Freelancer.com'].length }
     ],
     anthropic: {
