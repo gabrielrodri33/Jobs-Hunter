@@ -1,20 +1,16 @@
 /**
  * @module job-hunter/index
  * @description Orquestrador do Job Hunter.
- * Fluxo: scraping LinkedIn → dedup → análise Claude → cover letters → e-mail.
+ * Fluxo: scraping LinkedIn → dedup → análise Claude → e-mail.
  */
 
 import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
 import { analyzeItems } from '../shared/analyzer.js'
-import { generateCoverLetters } from '../shared/cover-letter.js'
 import { sendJobsEmail, sendErrorEmail } from '../shared/email.js'
 import { runLinkedinScraper } from './scrapers/linkedin.js'
 
 // Caminho do arquivo de dedup — gerenciado via GitHub Actions cache
 const SEEN_FILE = 'data/seen-jobs.json'
-
-// Objeto de uso vazio para casos onde cover letters não são geradas
-const EMPTY_USAGE = { inputTokens: 0, outputTokens: 0, costUsd: 0 }
 
 // Rastreia a etapa atual para incluir no e-mail de erro em caso de falha
 let currentStep = 'inicialização'
@@ -58,18 +54,7 @@ async function main() {
     process.exit(0)
   }
 
-  // ── 4. Geração de cover letters (apenas para CANDIDATAR) ───────────────────
-  currentStep = 'geração de cover letters'
-  let clUsage = EMPTY_USAGE
-  let coverLetters = []
-  if (candidatar.length > 0) {
-    console.log(`✍️  Gerando cover letters para ${candidatar.length} vagas...`)
-    const clResult = await generateCoverLetters(candidatar, 'job')
-    coverLetters = clResult.results
-    clUsage = clResult.usage
-  }
-
-  // ── 5. Monta resumo de custos da execução ──────────────────────────────────
+  // ── 4. Monta resumo de custos da execução ──────────────────────────────────
   const usageSummary = {
     scrapers: [
       { name: 'LinkedIn (Apify)', costUsd: linkedinCost, items: rawJobs.length }
@@ -80,27 +65,20 @@ async function main() {
         outputTokens: analyzerUsage.outputTokens,
         items: newJobs.length,
         costUsd: analyzerUsage.costUsd
-      },
-      coverLetters: {
-        inputTokens: clUsage.inputTokens,
-        outputTokens: clUsage.outputTokens,
-        items: candidatar.length,
-        costUsd: clUsage.costUsd
       }
     },
     totalCostUsd: parseFloat(
-      (linkedinCost + analyzerUsage.costUsd + clUsage.costUsd).toFixed(4)
+      (linkedinCost + analyzerUsage.costUsd).toFixed(4)
     ),
-    // Estimativa mensal baseada em 22 dias úteis
     estimatedMonthlyCostUsd: parseFloat(
-      ((linkedinCost + analyzerUsage.costUsd + clUsage.costUsd) * 22).toFixed(2)
+      ((linkedinCost + analyzerUsage.costUsd) * 22).toFixed(2)
     )
   }
 
-  // ── 6. Envio do e-mail ─────────────────────────────────────────────────────
+  // ── 5. Envio do e-mail ─────────────────────────────────────────────────────
   currentStep = 'envio de e-mail'
   console.log('📧 Enviando e-mail...')
-  await sendJobsEmail(candidatar, avaliar, coverLetters, usageSummary)
+  await sendJobsEmail(candidatar, avaliar, [], usageSummary)
 
   // Persiste IDs analisados para dedup na próxima execução
   saveSeen(SEEN_FILE, [...seenIds, ...analyzed.map(j => j.id)])
