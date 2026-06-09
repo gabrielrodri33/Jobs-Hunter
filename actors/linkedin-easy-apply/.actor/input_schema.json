@@ -6,43 +6,54 @@
     "searchQueries": {
       "title": "Search queries",
       "type": "array",
-      "description": "Job search terms. Each generates a separate search.",
+      "description": "Job search terms. Each term generates a separate search. Examples: 'Software Engineer', 'Product Manager', 'Data Scientist'.",
       "editor": "stringList",
-      "default": [
-        "Desenvolvedor .NET",
-        "Full Stack .NET React",
-        "Desenvolvedor C# Pleno",
-        "Blue Team Analyst",
-        "Analista Segurança Informação"
-      ]
+      "default": ["Software Engineer", "Full Stack Developer", "Data Scientist"]
     },
     "location": {
       "title": "Location",
       "type": "string",
-      "description": "Job location filter. Examples: Brazil, United States, Portugal",
+      "description": "Job location filter. Use country, city or region. Examples: 'United States', 'Brazil', 'London', 'Remote'.",
       "editor": "textfield",
-      "default": "Brazil"
+      "default": "United States"
     },
     "remote": {
       "title": "Remote only",
       "type": "boolean",
-      "description": "Filter for remote jobs only (f_WT=2)",
+      "description": "When enabled, filters results to remote jobs only.",
       "editor": "checkbox",
       "default": true
+    },
+    "easyApplyOnly": {
+      "title": "Easy Apply only",
+      "type": "boolean",
+      "description": "When enabled, verifies each job page and returns only jobs with the Easy Apply button (apply directly on LinkedIn without leaving the site). When disabled, returns all jobs without verification.",
+      "editor": "checkbox",
+      "default": true
+    },
+    "seniorityLevel": {
+      "title": "Seniority level",
+      "type": "array",
+      "description": "Filter by seniority level. Leave empty to include all levels.",
+      "editor": "select",
+      "items": { "type": "string" },
+      "enum": ["1", "2", "3", "4", "5", "6"],
+      "enumTitles": ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"],
+      "default": []
     },
     "datePosted": {
       "title": "Date posted",
       "type": "string",
       "description": "Filter jobs by how recently they were posted.",
       "editor": "select",
-      "enum": ["r86400", "r604800", "r2592000"],
-      "enumTitles": ["Last 24 hours", "Last week", "Last month"],
+      "enum": ["r86400", "r604800", "r2592000", ""],
+      "enumTitles": ["Last 24 hours", "Last week", "Last month", "Any time"],
       "default": "r604800"
     },
     "maxResultsPerQuery": {
       "title": "Max results per query",
       "type": "integer",
-      "description": "Maximum number of jobs to process per search query",
+      "description": "Maximum number of jobs to collect per search query. Higher values increase run time and cost.",
       "editor": "number",
       "default": 20,
       "minimum": 1,

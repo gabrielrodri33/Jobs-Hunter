@@ -2,7 +2,9 @@
   "actorSpecification": 1,
   "name": "linkedin-easy-apply-scraper",
   "title": "LinkedIn Easy Apply Jobs Scraper",
-  "description": "Scrapes LinkedIn job listings and verifies Easy Apply button on each public job page. No LinkedIn account or cookie required.",
+  "description": "Scrapes LinkedIn job listings and returns only Easy Apply jobs — verified by reading the apply button on each public job page. No LinkedIn account or cookie required.",
   "version": "0.1",
-  "buildTag": "latest"
+  "buildTag": "latest",
+  "categories": ["JOBS"],
+  "readme": "./README.md"
 }
