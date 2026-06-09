@@ -3,31 +3,30 @@
   "type": "object",
   "schemaVersion": 1,
   "properties": {
-    "linkedinCookie": {
-      "title": "LinkedIn Cookie (li_at)",
-      "type": "string",
-      "description": "Value of the li_at cookie from your LinkedIn session. Get it from: DevTools → Application → Cookies → www.linkedin.com → li_at",
-      "editor": "textfield",
-      "isSecret": true
-    },
     "searchQueries": {
       "title": "Search queries",
       "type": "array",
-      "description": "List of job search terms. Each generates a separate search.",
+      "description": "Job search terms. Each generates a separate search.",
       "editor": "stringList",
-      "default": ["Desenvolvedor .NET", "Full Stack .NET React", "Desenvolvedor C# Pleno", "Blue Team Analyst"]
+      "default": [
+        "Desenvolvedor .NET",
+        "Full Stack .NET React",
+        "Desenvolvedor C# Pleno",
+        "Blue Team Analyst",
+        "Analista Segurança Informação"
+      ]
     },
     "location": {
       "title": "Location",
       "type": "string",
-      "description": "City, state or country to filter job listings (e.g. Brazil, United States, Portugal).",
+      "description": "Job location filter. Examples: Brazil, United States, Portugal",
       "editor": "textfield",
       "default": "Brazil"
     },
     "remote": {
       "title": "Remote only",
       "type": "boolean",
-      "description": "When true, filters results to remote jobs only.",
+      "description": "Filter for remote jobs only (f_WT=2)",
       "editor": "checkbox",
       "default": true
     },
@@ -43,12 +42,12 @@
     "maxResultsPerQuery": {
       "title": "Max results per query",
       "type": "integer",
-      "description": "Maximum number of Easy Apply jobs to collect per search query.",
+      "description": "Maximum number of jobs to process per search query",
       "editor": "number",
       "default": 20,
       "minimum": 1,
       "maximum": 100
     }
   },
-  "required": ["linkedinCookie"]
+  "required": []
 }
