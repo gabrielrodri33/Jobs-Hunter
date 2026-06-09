@@ -1,50 +1,45 @@
 /**
  * @module job-hunter/scrapers/linkedin
- * @description Scraper de vagas do LinkedIn via Apify (actor: curious_coder/linkedin-jobs-scraper).
- * Inicia um run, aguarda conclusão com polling e retorna os itens do dataset.
+ * @description Scraper de vagas do LinkedIn via actor customizado no Apify.
+ * Usa o actor linkedin-easy-apply-scraper que verifica Easy Apply em cada vaga.
  *
- * Para personalizar as buscas, edite SEARCH_URLS abaixo.
- * Formato de URL: linkedin.com/jobs/search/?keywords=...&location=...&f_WT=2 (remoto)
+ * Configuração via variáveis de ambiente:
+ *   APIFY_ACTOR_ID_LINKEDIN  → ID do actor no Apify (ex: usuario~linkedin-easy-apply-scraper)
+ *   LINKEDIN_QUERIES         → queries separadas por vírgula
+ *   LINKEDIN_LOCATION        → localização (padrão: Brazil)
+ *   LINKEDIN_REMOTE          → "true"/"false" (padrão: true)
+ *   LINKEDIN_EASY_APPLY_ONLY → "true"/"false" (padrão: true)
+ *   LINKEDIN_MAX_PER_QUERY   → inteiro (padrão: 25)
+ *   LINKEDIN_DATE_POSTED     → r86400 | r604800 | r2592000 (padrão: r604800)
  */
 
 import { withRetry } from '../../shared/utils.js'
 
 const APIFY_BASE = 'https://api.apify.com/v2'
-
-// Actor do LinkedIn — não altere sem testar compatibilidade do schema de saída
-const ACTOR_ID = 'curious_coder~linkedin-jobs-scraper'
-
-// Intervalo de polling para verificar status do run (15s)
 const POLL_INTERVAL_MS = 15000
+const TIMEOUT_MS = 20 * 60 * 1000  // 20 min — actor otimizado roda em ~5 min
 
-// Timeout máximo aguardando o run (10 minutos)
-const TIMEOUT_MS = 10 * 60 * 1000
+function getActorInput() {
+  const queries = process.env.LINKEDIN_QUERIES
+    ? process.env.LINKEDIN_QUERIES.split(',').map(q => q.trim()).filter(Boolean)
+    : [
+        'Full Stack Developer .NET',
+        'Desenvolvedor Full Stack .NET',
+        'Desenvolvedor .NET',
+        '.NET Developer Remote',
+        'Blue Team Analyst',
+      ]
 
-/**
- * URLs de busca do LinkedIn.
- * Edite para adicionar/remover termos de busca, localizações ou filtros.
- * Parâmetros úteis:
- *   f_WT=2  → apenas remoto
- *   f_TPR=r604800 → últimos 7 dias
- *   f_TPR=r2592000 → último mês
- *   f_LF=f_AL → Easy Apply
- */
-export const SEARCH_URLS = [
-  'https://www.linkedin.com/jobs/search/?keywords=Full+Stack+Developer+.NET&location=United+States&f_WT=2&f_TPR=r604800&f_LF=f_AL&position=1&pageNum=0',
-  'https://www.linkedin.com/jobs/search/?keywords=Desenvolvedor+Full+Stack+.NET&location=Brazil&f_WT=2&f_TPR=r604800&f_LF=f_AL&position=1&pageNum=0',
-  'https://www.linkedin.com/jobs/search/?keywords=Full+Stack+Developer+.NET&location=Portugal&f_WT=2&f_TPR=r604800&f_LF=f_AL&position=1&pageNum=0',
-  'https://www.linkedin.com/jobs/search/?keywords=Blue+Team+Analyst&location=Brazil&f_WT=2&f_TPR=r2592000&f_LF=f_AL&position=1&pageNum=0',
-  'https://www.linkedin.com/jobs/search/?keywords=.NET+Developer+Remote&location=United+States&f_WT=2&f_TPR=r604800&f_LF=f_AL&position=1&pageNum=0',
-  'https://www.linkedin.com/jobs/search/?keywords=Full+Stack+Developer+.NET&location=United+Kingdom&f_WT=2&f_TPR=r604800&f_LF=f_AL&position=1&pageNum=0',
-  'https://www.linkedin.com/jobs/search/?keywords=Desenvolvedor+.NET&location=Brazil&f_WT=2&f_TPR=r604800&f_LF=f_AL&position=1&pageNum=0'
-]
+  return {
+    searchQueries: queries,
+    location: process.env.LINKEDIN_LOCATION ?? 'Brazil',
+    remote: (process.env.LINKEDIN_REMOTE ?? 'true') === 'true',
+    easyApplyOnly: (process.env.LINKEDIN_EASY_APPLY_ONLY ?? 'true') === 'true',
+    datePosted: process.env.LINKEDIN_DATE_POSTED ?? 'r604800',
+    maxResultsPerQuery: parseInt(process.env.LINKEDIN_MAX_PER_QUERY ?? '25', 10),
+  }
+}
 
-/**
- * Consulta o custo em USD de um run Apify já finalizado.
- * @param {string} runId - ID do run Apify.
- * @param {string} token - Token de autenticação Apify.
- * @returns {Promise<number>} Custo em USD (0 em caso de erro).
- */
 async function getRunCost(runId, token) {
   try {
     const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${token}`)
@@ -55,13 +50,6 @@ async function getRunCost(runId, token) {
   }
 }
 
-/**
- * Aguarda um run Apify terminar com polling periódico.
- * @param {string} runId - ID do run a monitorar.
- * @param {string} token - Token de autenticação Apify.
- * @returns {Promise<string>} ID do dataset padrão do run.
- * @throws {Error} Se o run falhar, for abortado ou atingir timeout.
- */
 async function pollRunUntilFinished(runId, token) {
   const deadline = Date.now() + TIMEOUT_MS
 
@@ -81,24 +69,21 @@ async function pollRunUntilFinished(runId, token) {
   throw new Error('LinkedIn scraper timeout')
 }
 
-/**
- * Executa o scraper do LinkedIn via Apify e retorna as vagas coletadas.
- * @returns {Promise<{jobs: Object[], apifyCostUsd: number}>}
- */
 export async function runLinkedinScraper() {
   const token = process.env.APIFY_TOKEN
+  const actorId = process.env.APIFY_ACTOR_ID_LINKEDIN
 
-  // Inicia o run Apify com as URLs de busca configuradas
+  if (!actorId) throw new Error('APIFY_ACTOR_ID_LINKEDIN não configurado')
+
+  const actorInput = getActorInput()
+  console.log(`  ⚙️  Queries: ${actorInput.searchQueries.join(' | ')}`)
+  console.log(`  ⚙️  Location: ${actorInput.location} | Remote: ${actorInput.remote} | EasyApply: ${actorInput.easyApplyOnly}`)
+
   const runData = await withRetry(() =>
-    fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
+    fetch(`${APIFY_BASE}/acts/${actorId}/runs?token=${token}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        count: 50,           // máximo de vagas por URL
-        scrapeCompany: true, // coleta dados da empresa
-        splitByLocation: false,
-        urls: SEARCH_URLS
-      })
+      body: JSON.stringify(actorInput),
     }).then(r => r.json())
   )
 
@@ -107,16 +92,14 @@ export async function runLinkedinScraper() {
 
   console.log(`  ⏳ Run iniciado: ${runId}`)
 
-  // Aguarda conclusão e obtém ID do dataset
   const datasetId = await pollRunUntilFinished(runId, token)
   const apifyCostUsd = await getRunCost(runId, token)
 
-  // Baixa todos os itens do dataset
   const itemsRes = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=1000`)
   const items = await itemsRes.json()
 
   return {
     jobs: Array.isArray(items) ? items : [],
-    apifyCostUsd
+    apifyCostUsd,
   }
 }

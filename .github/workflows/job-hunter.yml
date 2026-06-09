@@ -1,28 +1,59 @@
 name: Job Hunter
 
-# Executa o Job Hunter de segunda a sexta às 8h (horário de Brasília = 11h UTC)
+# Executa de segunda a sexta às 8h (horário de Brasília = 11h UTC)
 # Para rodar manualmente: Actions → Job Hunter → Run workflow
 on:
   schedule:
-    - cron: '0 11 * * 1-5'  # seg-sex 11h UTC = 8h BRT
-  workflow_dispatch:          # permite execução manual
+    - cron: '0 11 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      linkedin_queries:
+        description: 'Search queries (comma-separated). Leave blank to use default.'
+        required: false
+        default: ''
+      linkedin_location:
+        description: 'Location filter (e.g. Brazil, United States, Portugal)'
+        required: false
+        default: 'Brazil'
+      linkedin_remote:
+        description: 'Remote only?'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      linkedin_easy_apply_only:
+        description: 'Easy Apply only?'
+        required: false
+        default: 'true'
+        type: choice
+        options: ['true', 'false']
+      linkedin_max_per_query:
+        description: 'Max results per query'
+        required: false
+        default: '25'
+      linkedin_date_posted:
+        description: 'Date posted filter'
+        required: false
+        default: 'r604800'
+        type: choice
+        options:
+          - r86400    # Last 24 hours
+          - r604800   # Last week
+          - r2592000  # Last month
 
 jobs:
   hunt:
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
-      # Faz checkout do código
       - uses: actions/checkout@v4
 
-      # Configura Node.js 20
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Instala dependências do projeto
       - run: npm ci
 
-      # Restaura o cache de IDs já vistos para evitar reenvio de vagas duplicadas
       - name: Restaurar cache de dedup
         uses: actions/cache@v4
         with:
@@ -30,17 +61,23 @@ jobs:
           key: seen-jobs-${{ github.run_id }}
           restore-keys: seen-jobs-
 
-      # Executa o Job Hunter
       - name: Executar Job Hunter
         run: node src/job-hunter/index.js
         env:
           APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          APIFY_ACTOR_ID_LINKEDIN: ${{ secrets.APIFY_ACTOR_ID_LINKEDIN }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           JOB_EMAIL_FROM: ${{ secrets.JOB_EMAIL_FROM }}
           JOB_EMAIL_TO: ${{ secrets.JOB_EMAIL_TO }}
+          # Search config — inputs manuais têm prioridade; secrets definem o padrão do agendamento
+          LINKEDIN_QUERIES: ${{ inputs.linkedin_queries || secrets.LINKEDIN_QUERIES }}
+          LINKEDIN_LOCATION: ${{ inputs.linkedin_location || secrets.LINKEDIN_LOCATION }}
+          LINKEDIN_REMOTE: ${{ inputs.linkedin_remote || secrets.LINKEDIN_REMOTE }}
+          LINKEDIN_EASY_APPLY_ONLY: ${{ inputs.linkedin_easy_apply_only || secrets.LINKEDIN_EASY_APPLY_ONLY }}
+          LINKEDIN_MAX_PER_QUERY: ${{ inputs.linkedin_max_per_query || secrets.LINKEDIN_MAX_PER_QUERY }}
+          LINKEDIN_DATE_POSTED: ${{ inputs.linkedin_date_posted || secrets.LINKEDIN_DATE_POSTED }}
 
-      # Salva o cache atualizado mesmo se o passo anterior falhar
       - name: Salvar cache de dedup
         if: always()
         uses: actions/cache@v4
