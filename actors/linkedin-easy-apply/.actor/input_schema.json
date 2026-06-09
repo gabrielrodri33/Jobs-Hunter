@@ -36,9 +36,11 @@
       "type": "array",
       "description": "Filter by seniority level. Leave empty to include all levels.",
       "editor": "select",
-      "items": { "type": "string" },
-      "enum": ["1", "2", "3", "4", "5", "6"],
-      "enumTitles": ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"],
+      "items": {
+        "type": "string",
+        "enum": ["1", "2", "3", "4", "5", "6"],
+        "enumTitles": ["Internship", "Entry level", "Associate", "Mid-Senior level", "Director", "Executive"]
+      },
       "default": []
     },
     "datePosted": {
