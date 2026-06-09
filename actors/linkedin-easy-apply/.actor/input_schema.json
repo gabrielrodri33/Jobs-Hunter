@@ -21,12 +21,14 @@
       "title": "Location",
       "type": "string",
       "description": "City, state or country to filter job listings (e.g. Brazil, United States, Portugal).",
+      "editor": "textfield",
       "default": "Brazil"
     },
     "remote": {
       "title": "Remote only",
       "type": "boolean",
       "description": "When true, filters results to remote jobs only.",
+      "editor": "checkbox",
       "default": true
     },
     "datePosted": {
@@ -42,6 +44,7 @@
       "title": "Max results per query",
       "type": "integer",
       "description": "Maximum number of Easy Apply jobs to collect per search query.",
+      "editor": "number",
       "default": 20,
       "minimum": 1,
       "maximum": 100
