@@ -1,0 +1,47 @@
+{
+  "title": "LinkedIn Easy Apply Scraper",
+  "type": "object",
+  "schemaVersion": 1,
+  "properties": {
+    "linkedinCookie": {
+      "title": "LinkedIn Cookie (li_at)",
+      "type": "string",
+      "description": "Value of the li_at cookie from your LinkedIn session. Get it from: DevTools → Application → Cookies → www.linkedin.com → li_at",
+      "editor": "textfield",
+      "isSecret": true
+    },
+    "searchQueries": {
+      "title": "Search queries",
+      "type": "array",
+      "description": "List of job search terms. Each generates a separate search.",
+      "editor": "stringList",
+      "default": ["Desenvolvedor .NET", "Full Stack .NET React", "Desenvolvedor C# Pleno", "Blue Team Analyst"]
+    },
+    "location": {
+      "title": "Location",
+      "type": "string",
+      "default": "Brazil"
+    },
+    "remote": {
+      "title": "Remote only",
+      "type": "boolean",
+      "default": true
+    },
+    "datePosted": {
+      "title": "Date posted",
+      "type": "string",
+      "editor": "select",
+      "enum": ["r86400", "r604800", "r2592000"],
+      "enumTitles": ["Last 24 hours", "Last week", "Last month"],
+      "default": "r604800"
+    },
+    "maxResultsPerQuery": {
+      "title": "Max results per query",
+      "type": "integer",
+      "default": 20,
+      "minimum": 1,
+      "maximum": 100
+    }
+  },
+  "required": ["linkedinCookie"]
+}

@@ -1,0 +1,8 @@
+{
+  "actorSpecification": 1,
+  "name": "linkedin-easy-apply-scraper",
+  "title": "LinkedIn Easy Apply Jobs Scraper",
+  "description": "Scrapes LinkedIn job listings and verifies Easy Apply button on each job page. Requires LinkedIn session cookie (li_at).",
+  "version": "0.1",
+  "buildTag": "latest"
+}
