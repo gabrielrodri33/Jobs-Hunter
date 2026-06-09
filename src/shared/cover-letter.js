@@ -70,7 +70,7 @@ export async function generateCoverLetters(items, type) {
 
       const message = await withRetry(() =>
         client.messages.create({
-          model: 'claude-sonnet-4-5',
+          model: 'claude-haiku-4-5',
           max_tokens: 1500,
           system: COVER_LETTER_PROMPT,
           messages: [{ role: 'user', content: userContent }]
@@ -105,14 +105,14 @@ export async function generateCoverLetters(items, type) {
     }
   }
 
-  // Custo estimado (preços claude-sonnet-4-5 em Jun/2025)
+  // Custo estimado (preços claude-haiku-4-5 em Jun/2025)
   return {
     results,
     usage: {
       inputTokens: totalInputTokens,
       outputTokens: totalOutputTokens,
       costUsd: parseFloat(
-        (totalInputTokens * 0.000003 + totalOutputTokens * 0.000015).toFixed(4)
+        (totalInputTokens * 0.000001 + totalOutputTokens * 0.000005).toFixed(4)
       )
     }
   }
