@@ -9,11 +9,33 @@ import { callLlm, getModelChain, cleanJsonString } from './llm.js'
 import { prefilterItems } from './prefilter.js'
 import { sleep } from './utils.js'
 
-// Número de itens por chamada ao LLM — balanceia contexto e número de requests
-const BATCH_SIZE = 10
+// Número de itens por chamada ao LLM — lotes pequenos evitam JSON truncado
+// pelo limite de tokens de saída dos modelos free
+const BATCH_SIZE = 5
+
+// Descrições longas estouram contexto sem melhorar a análise
+const MAX_DESCRIPTION_CHARS = 1200
 
 // Pausa adicional entre lotes (o llm.js já aplica throttle de 3s por chamada)
 const BATCH_DELAY_MS = 1000
+
+/**
+ * Tenta recuperar os objetos completos de um array JSON truncado no meio.
+ * Corta no fechamento do último objeto completo e fecha o array.
+ * @param {string} s - String JSON possivelmente truncada (já limpa de markdown).
+ * @returns {Object[]|null} Array recuperado ou null se irrecuperável.
+ */
+function trySalvageTruncatedArray(s) {
+  if (!s.startsWith('[')) return null
+  const lastBrace = s.lastIndexOf('}')
+  if (lastBrace === -1) return null
+  try {
+    const parsed = JSON.parse(s.slice(0, lastBrace + 1) + ']')
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null
+  } catch {
+    return null
+  }
+}
 
 /**
  * Chama o LLM e faz parse do JSON com 1 retry no mesmo modelo em caso de JSON inválido,
@@ -28,11 +50,19 @@ async function callAndParse(models, system, user) {
     // Até 2 tentativas no mesmo modelo para JSON inválido
     for (let attempt = 0; attempt < 2; attempt++) {
       const { text, model } = await callLlm({ models: [models[i]], system, user })
+      const cleaned = cleanJsonString(text)
       try {
-        const parsed = JSON.parse(cleanJsonString(text))
+        const parsed = JSON.parse(cleaned)
         return Array.isArray(parsed) ? parsed : [parsed]
       } catch {
-        console.warn(`  ⚠️  JSON inválido de ${model} (tentativa ${attempt + 1}/2)`)
+        // Resposta truncada: tenta salvar os objetos completos do array
+        const salvaged = trySalvageTruncatedArray(cleaned)
+        if (salvaged) {
+          console.warn(`  ⚠️  JSON truncado de ${model} — recuperados ${salvaged.length} itens completos`)
+          return salvaged
+        }
+        // Loga um trecho da resposta bruta para diagnosticar (truncamento, texto extra, etc.)
+        console.warn(`  ⚠️  JSON inválido de ${model} (tentativa ${attempt + 1}/2). Início da resposta: ${JSON.stringify(text.slice(0, 200))} | Fim: ${JSON.stringify(text.slice(-100))}`)
       }
     }
     if (i < models.length - 1) {
@@ -55,7 +85,13 @@ export async function analyzeItems(items, type) {
   const models = getModelChain('analyzer')
 
   // ── 1. Pré-filtro local sem IA ─────────────────────────────────────────────
-  const { kept, removed } = prefilterItems(items, type)
+  const { kept: keptRaw, removed } = prefilterItems(items, type)
+
+  // Trunca descrições longas para economizar contexto
+  const kept = keptRaw.map(item => ({
+    ...item,
+    description: (item.description ?? '').slice(0, MAX_DESCRIPTION_CHARS)
+  }))
 
   const results = []
 
@@ -71,7 +107,7 @@ export async function analyzeItems(items, type) {
       const parsed = await callAndParse(
         models,
         systemPrompt,
-        `Analise os seguintes ${batch.length} itens e responda APENAS com um array JSON válido, sem markdown:\n\n${JSON.stringify(batch, null, 2)}`
+        `Analise os seguintes ${batch.length} itens e responda APENAS com um array JSON válido, sem markdown:\n\n${JSON.stringify(batch)}`
       )
       results.push(...parsed)
     } catch (err) {

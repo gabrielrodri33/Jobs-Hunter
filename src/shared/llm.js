@@ -46,10 +46,11 @@ export function getModelChain(purpose) {
  * @param {string} opts.system - System prompt.
  * @param {string} opts.user - Mensagem do usuário.
  * @param {number} [opts.temperature=0.3]
+ * @param {number} [opts.maxTokens=8000] - Limite de tokens de saída (evita JSON truncado).
  * @returns {Promise<{text: string, model: string}>} Texto da resposta e modelo usado.
  * @throws {Error} Se todos os modelos da cadeia falharem.
  */
-export async function callLlm({ models, system, user, temperature = 0.3 }) {
+export async function callLlm({ models, system, user, temperature = 0.3, maxTokens = 8000 }) {
   if (!process.env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY não configurado')
   }
@@ -76,6 +77,7 @@ export async function callLlm({ models, system, user, temperature = 0.3 }) {
         body: JSON.stringify({
           model,
           temperature,
+          max_tokens: maxTokens,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user }
@@ -96,11 +98,26 @@ export async function callLlm({ models, system, user, temperature = 0.3 }) {
       }
 
       const data = await res.json()
-      const text = data.choices?.[0]?.message?.content
+
+      // OpenRouter pode retornar 200 com erro no corpo (ex: modelo inexistente)
+      if (data.error) {
+        errors.push(`${model}: ${data.error.message ?? JSON.stringify(data.error)}`)
+        console.warn(`  ⚠️  ${model} erro da API: ${data.error.message ?? JSON.stringify(data.error).slice(0, 200)}`)
+        await sleep(FALLBACK_DELAY_MS * (i + 1))
+        continue
+      }
+
+      const choice = data.choices?.[0]
+      const text = choice?.message?.content
       if (!text) {
         errors.push(`${model}: resposta vazia`)
         console.warn(`  ⚠️  ${model} retornou resposta vazia — tentando próximo modelo...`)
         continue
+      }
+
+      // Resposta cortada por limite de tokens gera JSON truncado — avisa para diagnóstico
+      if (choice.finish_reason === 'length') {
+        console.warn(`  ⚠️  ${model} truncou a resposta (finish_reason=length) — JSON pode estar incompleto`)
       }
 
       return { text, model }
