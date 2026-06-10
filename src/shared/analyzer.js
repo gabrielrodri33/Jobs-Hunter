@@ -47,26 +47,45 @@ function trySalvageTruncatedArray(s) {
  */
 async function callAndParse(models, system, user) {
   for (let i = 0; i < models.length; i++) {
+    const model = models[i]
+
     // Até 2 tentativas no mesmo modelo para JSON inválido
     for (let attempt = 0; attempt < 2; attempt++) {
-      const { text, model } = await callLlm({ models: [models[i]], system, user })
+      let text, usedModel
+      try {
+        const result = await callLlm({ models: [model], system, user })
+        text = result.text
+        usedModel = result.model
+      } catch (err) {
+        // Modelo falhou em nível de API — vai para o próximo
+        console.error(`  ❌ ${model} erro de API (tentativa ${attempt + 1}/2): ${err.message}`)
+        break
+      }
+
       const cleaned = cleanJsonString(text)
       try {
         const parsed = JSON.parse(cleaned)
+        // Se retornou objeto com array dentro (ex: {"results": [...]})
+        if (!Array.isArray(parsed)) {
+          const inner = Object.values(parsed).find(Array.isArray)
+          if (inner) return inner
+        }
         return Array.isArray(parsed) ? parsed : [parsed]
       } catch {
-        // Resposta truncada: tenta salvar os objetos completos do array
         const salvaged = trySalvageTruncatedArray(cleaned)
         if (salvaged) {
-          console.warn(`  ⚠️  JSON truncado de ${model} — recuperados ${salvaged.length} itens completos`)
+          console.warn(`  ⚠️  JSON truncado de ${usedModel} — recuperados ${salvaged.length} itens completos`)
           return salvaged
         }
-        // Loga um trecho da resposta bruta para diagnosticar (truncamento, texto extra, etc.)
-        console.warn(`  ⚠️  JSON inválido de ${model} (tentativa ${attempt + 1}/2). Início da resposta: ${JSON.stringify(text.slice(0, 200))} | Fim: ${JSON.stringify(text.slice(-100))}`)
+        // Loga resposta completa com console.error para garantir visibilidade no GitHub Actions
+        console.error(`  ❌ JSON inválido de ${usedModel} (tentativa ${attempt + 1}/2):`)
+        console.error(`     Resposta (500 chars): ${text.slice(0, 500)}`)
+        console.error(`     Fim da resposta: ${text.slice(-200)}`)
       }
     }
+
     if (i < models.length - 1) {
-      console.warn(`  ⚠️  Caindo para o próximo modelo: ${models[i + 1]}`)
+      console.error(`  ⚠️  Caindo para o próximo modelo: ${models[i + 1]}`)
     }
   }
   throw new Error('Nenhum modelo retornou JSON válido')

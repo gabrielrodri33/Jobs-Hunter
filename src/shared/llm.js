@@ -141,14 +141,18 @@ export async function callLlm({ models, system, user, temperature = 0.3, maxToke
  */
 export function cleanJsonString(str) {
   let s = str.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
-  // Alguns modelos adicionam texto antes/depois — extrai do primeiro [ ou { ao último ] ou }
-  const firstBracket = Math.min(...['[', '{'].map(c => {
-    const idx = s.indexOf(c)
-    return idx === -1 ? Infinity : idx
-  }))
-  const lastBracket = Math.max(s.lastIndexOf(']'), s.lastIndexOf('}'))
-  if (firstBracket !== Infinity && lastBracket > firstBracket) {
-    s = s.slice(firstBracket, lastBracket + 1)
+
+  // Prefer JSON array: find "[\s*{" or "[\s*[" which marks real array start
+  const arrayMatch = s.search(/\[\s*[\{\[]/)
+  if (arrayMatch !== -1) {
+    const arrayEnd = s.lastIndexOf(']')
+    if (arrayEnd > arrayMatch) return s.slice(arrayMatch, arrayEnd + 1)
   }
+
+  // Fallback: first { to last }
+  const objStart = s.indexOf('{')
+  const objEnd = s.lastIndexOf('}')
+  if (objStart !== -1 && objEnd > objStart) return s.slice(objStart, objEnd + 1)
+
   return s
 }
