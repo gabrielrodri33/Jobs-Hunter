@@ -22,20 +22,10 @@ const TIMEOUT_MS = 8 * 60 * 1000
 // Pausa entre keywords para evitar múltiplos runs simultâneos
 const KEYWORD_DELAY_MS = 3000
 
-/**
- * Keywords de busca para o Upwork.
- * Edite para adicionar/remover termos conforme sua stack e área de atuação.
- */
+// Mantém poucas keywords — cada uma gera um run separado no Apify (custo por run)
 export const UPWORK_KEYWORDS = [
   '.NET developer',
-  'Full Stack .NET React',
-  'Next.js developer',
-  'C# developer',
-  'Power BI dashboard',
-  'Python automation',
   'cybersecurity consultant',
-  'SaaS development .NET',
-  'API integration .NET'
 ]
 
 /**
@@ -101,7 +91,7 @@ export async function scrapeUpwork() {
         fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ searchQuery: keyword, maxItems: 20, type: 'jobs' })
+          body: JSON.stringify({ searchQuery: keyword, maxItems: 50, type: 'jobs' })
         }).then(r => r.json())
       )
 

@@ -22,19 +22,10 @@ const TIMEOUT_MS = 8 * 60 * 1000
 // Pausa entre keywords para evitar múltiplos runs simultâneos
 const KEYWORD_DELAY_MS = 3000
 
-/**
- * Keywords de busca para o Workana.
- * Edite para adicionar/remover termos conforme sua stack e área de atuação.
- */
+// Mantém poucas keywords — cada uma gera um run separado no Apify (custo por run)
 export const WORKANA_KEYWORDS = [
   '.NET',
-  'Full Stack',
-  'React Next.js',
-  'Power BI',
-  'Python automação',
-  'C# desenvolvedor',
   'segurança da informação',
-  'desenvolvimento web'
 ]
 
 /**
@@ -100,7 +91,7 @@ export async function scrapeWorkana() {
         fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: keyword, maxItems: 15 })
+          body: JSON.stringify({ query: keyword, maxItems: 50 })
         }).then(r => r.json())
       )
 
