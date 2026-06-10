@@ -14,7 +14,7 @@ export function sleep(ms) {
 
 /**
  * Executa uma função assíncrona com retry automático e backoff exponencial.
- * Útil para chamadas à API Apify e Anthropic que podem falhar transitoriamente.
+ * Útil para chamadas HTTP (scrapers, OpenRouter, Resend) que podem falhar transitoriamente.
  * @param {Function} fn - Função assíncrona a executar.
  * @param {number} [retries=3] - Número máximo de tentativas.
  * @param {number} [baseDelayMs=2000] - Atraso base em ms (dobra a cada tentativa).

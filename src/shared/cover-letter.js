@@ -1,29 +1,26 @@
 /**
  * @module cover-letter
- * @description Geração de cover letters e propostas freelance via Claude API.
- * Gera versões em português e inglês para cada item relevante.
+ * @description Geração de cover letters e propostas freelance via OpenRouter (modelos gratuitos).
+ * Gera versões em português e inglês apenas para os top N itens (default 5),
+ * ordenados por win_probability/match_percentage.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
 import { COVER_LETTER_PROMPT } from './profile.js'
-import { sleep, withRetry } from './utils.js'
+import { callLlm, getModelChain, cleanJsonString } from './llm.js'
+import { sleep } from './utils.js'
 
-// Pausa entre cada geração para respeitar rate limits da API
-const ITEM_DELAY_MS = 1500
+// Pausa entre cada geração (além do throttle global do llm.js)
+const ITEM_DELAY_MS = 1000
 
-/**
- * Remove blocos de markdown antes do JSON.parse (Claude pode retornar ```json).
- * @param {string} str - String bruta da API.
- * @returns {string} JSON limpo.
- */
-function cleanJsonString(str) {
-  return str.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
+// Máximo de cover letters por execução — configurável via MAX_COVER_LETTERS
+function getMaxCoverLetters() {
+  return parseInt(process.env.MAX_COVER_LETTERS ?? '5', 10)
 }
 
 /**
  * Monta o prompt de usuário para geração de cover letter de vaga de emprego.
  * @param {Object} item - Vaga analisada com campos title, company, location, match_points, differentials.
- * @returns {string} Prompt formatado para o Claude.
+ * @returns {string} Prompt formatado.
  */
 function buildJobPrompt(item) {
   return `Gere cover letter para esta vaga.
@@ -36,7 +33,7 @@ Retorne apenas JSON: {"pt": "...", "en": "..."}`
 /**
  * Monta o prompt de usuário para geração de proposta de projeto freelance.
  * @param {Object} item - Projeto analisado com campos title, client, platform, budget, tech_match, proposal_angle.
- * @returns {string} Prompt formatado para o Claude.
+ * @returns {string} Prompt formatado.
  */
 function buildFreelancePrompt(item) {
   return `Gere proposta para este projeto freelance.
@@ -47,42 +44,44 @@ Retorne apenas JSON: {"pt": "...", "en": "..."}`
 }
 
 /**
- * Gera cover letters ou propostas freelance para um array de itens.
- * Processa um item por vez para garantir personalização máxima.
+ * Gera cover letters ou propostas freelance para os melhores itens do array.
+ * Limita ao top MAX_COVER_LETTERS (default 5) ordenado por win_probability
+ * (freelance) ou match_percentage (vagas).
  *
  * @param {Object[]} items - Vagas (CANDIDATAR) ou projetos (ACEITAR) já analisados.
  * @param {'job'|'freelance'} type - Tipo de conteúdo a gerar.
  * @returns {Promise<{results: Array<{id: string, cover_letter_pt: string, cover_letter_en: string}>, usage: Object}>}
  */
 export async function generateCoverLetters(items, type) {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-  const results = []
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
+  const models = getModelChain('writer')
+  const maxItems = getMaxCoverLetters()
 
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i]
-    console.log(`  ✍️  Cover letter ${i + 1}/${items.length}: ${item.title}`)
+  // Ordena por probabilidade de sucesso e limita ao top N
+  const sorted = [...items].sort((a, b) =>
+    (b.win_probability ?? b.match_percentage ?? 0) - (a.win_probability ?? a.match_percentage ?? 0)
+  )
+  const selected = sorted.slice(0, maxItems)
+
+  if (items.length > selected.length) {
+    console.log(`  ✂️  Limitando a ${selected.length} de ${items.length} itens (MAX_COVER_LETTERS=${maxItems})`)
+  }
+
+  const results = []
+
+  for (let i = 0; i < selected.length; i++) {
+    const item = selected[i]
+    console.log(`  ✍️  Cover letter ${i + 1}/${selected.length}: ${item.title}`)
 
     try {
-      // Seleciona o builder de prompt conforme o tipo
       const userContent = type === 'job' ? buildJobPrompt(item) : buildFreelancePrompt(item)
+      const { text } = await callLlm({
+        models,
+        system: COVER_LETTER_PROMPT,
+        user: userContent,
+        temperature: 0.7
+      })
 
-      const message = await withRetry(() =>
-        client.messages.create({
-          model: 'claude-haiku-4-5',
-          max_tokens: 1500,
-          system: COVER_LETTER_PROMPT,
-          messages: [{ role: 'user', content: userContent }]
-        })
-      )
-
-      totalInputTokens += message.usage?.input_tokens ?? 0
-      totalOutputTokens += message.usage?.output_tokens ?? 0
-
-      const raw = message.content[0].text
-      const cleaned = cleanJsonString(raw)
-      const parsed = JSON.parse(cleaned)
+      const parsed = JSON.parse(cleanJsonString(text))
 
       results.push({
         id: item.id,
@@ -99,21 +98,14 @@ export async function generateCoverLetters(items, type) {
       })
     }
 
-    // Pausa entre itens (exceto no último)
-    if (i < items.length - 1) {
+    if (i < selected.length - 1) {
       await sleep(ITEM_DELAY_MS)
     }
   }
 
-  // Custo estimado (preços claude-haiku-4-5 em Jun/2025)
+  // Modelos free do OpenRouter — custo zero; campos mantidos por compatibilidade
   return {
     results,
-    usage: {
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
-      costUsd: parseFloat(
-        (totalInputTokens * 0.000001 + totalOutputTokens * 0.000005).toFixed(4)
-      )
-    }
+    usage: { inputTokens: 0, outputTokens: 0, costUsd: 0 }
   }
 }

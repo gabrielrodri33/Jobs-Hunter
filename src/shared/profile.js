@@ -66,6 +66,36 @@ export const CANDIDATE_INFO = {
   ]
 }
 
+// ── Regras do pré-filtro local (src/shared/prefilter.js) ─────────────────────
+// Descarta itens por regra antes da análise por LLM — sem custo de IA
+export const PREFILTER_RULES = {
+  job: {
+    // Pelo menos uma destas deve aparecer em título+descrição+skills (vazio = não exige)
+    requiredKeywords: [
+      '.net', 'c#', 'csharp', 'full stack', 'fullstack', 'react', 'next.js', 'nextjs',
+      'power bi', 'blue team', 'soc', 'segurança', 'security', 'cybersecurity', 'dados', 'data'
+    ],
+    // Nenhuma destas pode aparecer no título
+    forbiddenKeywords: [
+      'php', 'ruby', 'golang', 'helpdesk', 'help desk', 'suporte técnico', 'wordpress',
+      'salesforce', 'sap abap', 'cobol'
+    ],
+    // Senioridade incompatível no título
+    forbiddenSeniority: ['estágio', 'estagiário', 'intern', 'trainee', 'aprendiz']
+  },
+  freelance: {
+    requiredKeywords: [
+      '.net', 'c#', 'csharp', 'react', 'next.js', 'nextjs', 'api', 'dashboard', 'power bi',
+      'python', 'sql', 'saas', 'segurança', 'security', 'automation', 'automação', 'scraping'
+    ],
+    forbiddenKeywords: [
+      'logo', 'design gráfico', 'graphic design', 'redação', 'copywriting', 'seo',
+      'tradução', 'translation', 'video editing', 'edição de vídeo'
+    ],
+    forbiddenSeniority: []
+  }
+}
+
 // ── Prompt de análise de vagas de emprego ─────────────────────────────────────
 // Instrui o Claude a retornar um array JSON com scores CANDIDATAR/AVALIAR/IGNORAR
 export const JOB_ANALYZER_PROMPT = `Você é um recrutador técnico sênior especializado em desenvolvimento de software e cibersegurança. Analise cada vaga comparando com o perfil do candidato abaixo e retorne APENAS um array JSON válido, sem texto adicional, sem markdown, sem explicações.

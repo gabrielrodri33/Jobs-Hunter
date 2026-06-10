@@ -1,96 +1,97 @@
 /**
  * @module analyzer
- * @description Análise de compatibilidade de vagas e projetos via Claude API.
- * Processa itens em lotes para respeitar limites de tokens e rate limits.
+ * @description Análise de compatibilidade de vagas e projetos via OpenRouter (modelos gratuitos).
+ * Aplica pré-filtro local sem IA antes de chamar o LLM e processa em lotes de 10.
  */
 
-import Anthropic from '@anthropic-ai/sdk'
 import { JOB_ANALYZER_PROMPT, FREELANCE_ANALYZER_PROMPT } from './profile.js'
-import { sleep, withRetry } from './utils.js'
+import { callLlm, getModelChain, cleanJsonString } from './llm.js'
+import { prefilterItems } from './prefilter.js'
+import { sleep } from './utils.js'
 
-// Número de itens por chamada à API — balanceia custo de tokens e número de requests
+// Número de itens por chamada ao LLM — balanceia contexto e número de requests
 const BATCH_SIZE = 10
 
-// Pausa entre lotes para evitar rate limiting na API Anthropic
-const BATCH_DELAY_MS = 2000
+// Pausa adicional entre lotes (o llm.js já aplica throttle de 3s por chamada)
+const BATCH_DELAY_MS = 1000
 
 /**
- * Remove blocos de markdown (```json ... ```) que o Claude pode incluir na resposta,
- * antes de fazer o JSON.parse.
- * @param {string} str - String bruta retornada pelo Claude.
- * @returns {string} JSON limpo, pronto para parse.
+ * Chama o LLM e faz parse do JSON com 1 retry no mesmo modelo em caso de JSON inválido,
+ * antes de cair para o próximo modelo da cadeia de fallback.
+ * @param {string[]} models - Cadeia de modelos.
+ * @param {string} system - System prompt.
+ * @param {string} user - Mensagem do usuário.
+ * @returns {Promise<Object[]>} Array JSON parseado.
  */
-function cleanJsonString(str) {
-  return str.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
+async function callAndParse(models, system, user) {
+  for (let i = 0; i < models.length; i++) {
+    // Até 2 tentativas no mesmo modelo para JSON inválido
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const { text, model } = await callLlm({ models: [models[i]], system, user })
+      try {
+        const parsed = JSON.parse(cleanJsonString(text))
+        return Array.isArray(parsed) ? parsed : [parsed]
+      } catch {
+        console.warn(`  ⚠️  JSON inválido de ${model} (tentativa ${attempt + 1}/2)`)
+      }
+    }
+    if (i < models.length - 1) {
+      console.warn(`  ⚠️  Caindo para o próximo modelo: ${models[i + 1]}`)
+    }
+  }
+  throw new Error('Nenhum modelo retornou JSON válido')
 }
 
 /**
- * Analisa um array de vagas ou projetos usando Claude API e retorna scores de compatibilidade.
- * Processa em lotes de BATCH_SIZE itens para controlar uso de tokens.
+ * Analisa um array de vagas ou projetos e retorna scores de compatibilidade.
+ * Aplica pré-filtro local antes do LLM e processa em lotes de BATCH_SIZE itens.
  *
  * @param {Object[]} items - Vagas (job) ou projetos (freelance) a analisar.
  * @param {'job'|'freelance'} type - Tipo de análise — define o system prompt usado.
- * @returns {Promise<{results: Object[], usage: {inputTokens: number, outputTokens: number, costUsd: number}}>}
+ * @returns {Promise<{results: Object[], usage: {inputTokens: number, outputTokens: number, costUsd: number, prefilteredOut: number, analyzedCount: number}}>}
  */
 export async function analyzeItems(items, type) {
-  const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
-
-  // Seleciona o prompt baseado no tipo de análise
   const systemPrompt = type === 'job' ? JOB_ANALYZER_PROMPT : FREELANCE_ANALYZER_PROMPT
-  const results = []
-  let totalInputTokens = 0
-  let totalOutputTokens = 0
+  const models = getModelChain('analyzer')
 
-  // ── 1. Processa em lotes ───────────────────────────────────────────────────
-  for (let i = 0; i < items.length; i += BATCH_SIZE) {
-    const batch = items.slice(i, i + BATCH_SIZE)
+  // ── 1. Pré-filtro local sem IA ─────────────────────────────────────────────
+  const { kept, removed } = prefilterItems(items, type)
+
+  const results = []
+
+  // ── 2. Processa em lotes ───────────────────────────────────────────────────
+  for (let i = 0; i < kept.length; i += BATCH_SIZE) {
+    const batch = kept.slice(i, i + BATCH_SIZE)
     const batchNum = Math.floor(i / BATCH_SIZE) + 1
-    const totalBatches = Math.ceil(items.length / BATCH_SIZE)
+    const totalBatches = Math.ceil(kept.length / BATCH_SIZE)
 
     console.log(`  📊 Batch ${batchNum}/${totalBatches} — ${batch.length} itens`)
 
     try {
-      const message = await withRetry(() =>
-        client.messages.create({
-          model: 'claude-haiku-4-5',
-          max_tokens: 5000,
-          system: systemPrompt,
-          messages: [
-            {
-              role: 'user',
-              content: `Analise os seguintes ${batch.length} itens e retorne um array JSON:\n\n${JSON.stringify(batch, null, 2)}`
-            }
-          ]
-        })
+      const parsed = await callAndParse(
+        models,
+        systemPrompt,
+        `Analise os seguintes ${batch.length} itens e responda APENAS com um array JSON válido, sem markdown:\n\n${JSON.stringify(batch, null, 2)}`
       )
-
-      // ── 2. Acumula uso de tokens para cálculo de custo ────────────────────
-      totalInputTokens += message.usage?.input_tokens ?? 0
-      totalOutputTokens += message.usage?.output_tokens ?? 0
-
-      const raw = message.content[0].text
-      const cleaned = cleanJsonString(raw)
-      const parsed = JSON.parse(cleaned)
       results.push(...parsed)
     } catch (err) {
       console.error(`  ❌ Erro no batch ${batchNum}: ${err.message}`)
     }
 
-    // Pausa entre lotes (exceto no último)
-    if (i + BATCH_SIZE < items.length) {
+    if (i + BATCH_SIZE < kept.length) {
       await sleep(BATCH_DELAY_MS)
     }
   }
 
-  // ── 3. Calcula custo estimado (preços claude-haiku-4-5 em Jun/2025) ────────
+  // Modelos free do OpenRouter — custo zero; campos de token mantidos por compatibilidade
   return {
     results,
     usage: {
-      inputTokens: totalInputTokens,
-      outputTokens: totalOutputTokens,
-      costUsd: parseFloat(
-        (totalInputTokens * 0.000001 + totalOutputTokens * 0.000005).toFixed(4)
-      )
+      inputTokens: 0,
+      outputTokens: 0,
+      costUsd: 0,
+      prefilteredOut: removed,
+      analyzedCount: kept.length
     }
   }
 }

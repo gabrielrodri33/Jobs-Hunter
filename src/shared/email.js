@@ -86,7 +86,7 @@ function buildUsageBlock(usage) {
 
   const analysisRow = `
     <tr>
-      <td style="padding:3px 0;font-size:12px;color:#6b7280;">Análise Claude (${usage.anthropic.analysis.items} itens)</td>
+      <td style="padding:3px 0;font-size:12px;color:#6b7280;">Análise LLM (${usage.anthropic.analysis.items} itens)</td>
       <td style="padding:3px 0;font-size:12px;color:#374151;text-align:right;font-weight:500;">$${usage.anthropic.analysis.costUsd.toFixed(4)}</td>
       <td style="padding:3px 0;font-size:12px;color:#9ca3af;text-align:right;">
         ${(usage.anthropic.analysis.inputTokens / 1000).toFixed(1)}k in / ${(usage.anthropic.analysis.outputTokens / 1000).toFixed(1)}k out

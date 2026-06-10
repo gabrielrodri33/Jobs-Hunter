@@ -1,120 +1,169 @@
 /**
  * @module freelance-hunter/scrapers/workana
- * @description Scraper de projetos do Workana via Apify (actor: getdataforme/workana-job-scraper).
- * Atualmente desabilitado no orquestrador — descomente as importações em index.js para ativar.
+ * @description Scraper de projetos do Workana via busca pública — sem Apify.
+ * Tenta primeiro extrair dados de JSON embutido na página; se não houver,
+ * parseia o HTML com cheerio.
  *
  * Para personalizar as buscas, edite WORKANA_KEYWORDS abaixo.
  */
 
-import { withRetry } from '../../shared/utils.js'
+import * as cheerio from 'cheerio'
+import { sleep } from '../../shared/utils.js'
 
-const APIFY_BASE = 'https://api.apify.com/v2'
+const SEARCH_URL = 'https://www.workana.com/jobs'
 
-// Actor do Workana no Apify — não altere sem testar compatibilidade do schema de saída
-const ACTOR_ID = 'getdataforme~workana-job-scraper'
+// Tentativas por request em 429/5xx, com backoff exponencial
+const MAX_RETRIES = 3
 
-// Intervalo de polling para verificar status do run (10s)
-const POLL_INTERVAL_MS = 10000
+// Headers de browser real
+const HEADERS = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+  'Accept-Language': 'pt-BR,pt;q=0.9,en-US;q=0.8,en;q=0.7',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+}
 
-// Timeout máximo aguardando o run (8 minutos)
-const TIMEOUT_MS = 8 * 60 * 1000
-
-// Pausa entre keywords para evitar múltiplos runs simultâneos
-const KEYWORD_DELAY_MS = 3000
-
-// Mantém poucas keywords — cada uma gera um run separado no Apify (custo por run)
 export const WORKANA_KEYWORDS = [
   '.NET',
   'segurança da informação',
 ]
 
-/**
- * Consulta o custo em USD de um run Apify já finalizado.
- * @param {string} runId - ID do run Apify.
- * @param {string} token - Token de autenticação Apify.
- * @returns {Promise<number>} Custo em USD (0 em caso de erro).
- */
-async function getRunCost(runId, token) {
-  try {
-    const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${token}`)
-    const data = await res.json()
-    return data.data?.usageUsd ?? 0
-  } catch {
-    return 0
-  }
+/** Delay aleatório entre 2 e 5 segundos entre requests. */
+function randomDelay() {
+  return sleep(2000 + Math.floor(Math.random() * 3000))
 }
 
 /**
- * Aguarda um run Apify terminar com polling periódico.
- * @param {string} runId - ID do run a monitorar.
- * @param {string} token - Token de autenticação Apify.
- * @returns {Promise<string>} ID do dataset padrão do run.
- * @throws {Error} Se o run falhar, for abortado ou atingir timeout.
+ * Faz fetch da página de busca com retry exponencial em 429/5xx.
+ * @param {string} url - URL completa.
+ * @returns {Promise<string>} HTML da página.
  */
-async function pollRun(runId, token) {
-  const deadline = Date.now() + TIMEOUT_MS
-
-  while (Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, POLL_INTERVAL_MS))
-
-    const res = await fetch(`${APIFY_BASE}/actor-runs/${runId}?token=${token}`)
-    const data = await res.json()
-    const status = data.data?.status
-
-    if (status === 'SUCCEEDED') return data.data.defaultDatasetId
-    if (['FAILED', 'ABORTED', 'TIMED-OUT'].includes(status)) {
-      throw new Error(`Workana run ${status}`)
+async function fetchPage(url) {
+  let lastErr
+  for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+    try {
+      const res = await fetch(url, { headers: HEADERS })
+      if (res.ok) return await res.text()
+      const err = new Error(`HTTP ${res.status}`)
+      err.retryable = res.status === 429 || res.status >= 500
+      throw err
+    } catch (err) {
+      lastErr = err
+      if (err.retryable === false) throw err
+      if (attempt < MAX_RETRIES - 1) {
+        const delay = 2000 * Math.pow(2, attempt)
+        console.warn(`    ⚠️  ${err.message} — retry em ${delay}ms`)
+        await sleep(delay)
+      }
     }
   }
-  throw new Error('Workana scraper timeout')
+  throw lastErr
 }
 
 /**
- * Busca projetos no Workana para cada keyword configurada via Apify.
- * Executa um run separado por keyword para melhor controle de resultados.
+ * Tenta extrair projetos de JSON embutido na página (__NEXT_DATA__ ou estado inicial).
+ * @param {string} html - HTML da página de busca.
+ * @returns {Object[]|null} Projetos brutos ou null se não houver JSON embutido reconhecível.
+ */
+function tryParseEmbeddedJson(html) {
+  const patterns = [
+    /<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/,
+    /window\.__INITIAL_STATE__\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/,
+    /window\.preloadedData\s*=\s*(\{[\s\S]*?\})\s*;?\s*<\/script>/
+  ]
+
+  for (const pattern of patterns) {
+    const m = html.match(pattern)
+    if (!m) continue
+    try {
+      const data = JSON.parse(m[1])
+      // Procura um array de projetos em caminhos conhecidos
+      const candidates = [
+        data?.props?.pageProps?.projects,
+        data?.props?.pageProps?.results,
+        data?.projects?.items,
+        data?.projects,
+        data?.results
+      ]
+      for (const c of candidates) {
+        if (Array.isArray(c) && c.length > 0) return c
+      }
+    } catch {
+      // JSON embutido ilegível — cai para o parse de HTML
+    }
+  }
+  return null
+}
+
+/**
+ * Parseia os cards de projeto do HTML da busca com cheerio.
+ * @param {string} html - HTML da página de busca.
+ * @returns {Object[]} Projetos no formato esperado por normalizeWorkana.
+ */
+function parseHtmlProjects(html) {
+  const $ = cheerio.load(html)
+  const projects = []
+
+  $('.project-item, [class*="project-item"]').each((_, el) => {
+    const $card = $(el)
+    const $link = $card.find('h2 a, .project-title a, a[href*="/job/"]').first()
+    const title = $link.text().trim()
+    if (!title) return
+
+    let url = $link.attr('href') ?? ''
+    if (url && !url.startsWith('http')) url = `https://www.workana.com${url}`
+
+    // Slug da URL serve como ID estável
+    const slug = url.split('/').filter(Boolean).pop()?.split('?')[0]
+
+    projects.push({
+      id: slug,
+      slug,
+      title,
+      description: $card.find('.project-details, .html-desc, p').first().text().trim(),
+      budget: $card.find('.budget, .values, [class*="budget"]').first().text().replace(/\s+/g, ' ').trim() || null,
+      skills: $card.find('.skills a, [class*="skill"] a').map((_, s) => $(s).text().trim()).get(),
+      proposals: parseInt($card.find('.bids, [class*="bids"]').first().text().replace(/\D/g, ''), 10) || null,
+      published_at: $card.find('time').attr('datetime') ?? null,
+      url
+    })
+  })
+
+  return projects
+}
+
+/**
+ * Busca projetos no Workana para cada keyword configurada, sem Apify.
+ * Falha em uma keyword (após retries) não interrompe as demais.
  *
  * @returns {Promise<{projects: Object[], apifyCostUsd: number}>}
  *   - projects: array de projetos brutos (normalizar com normalizeProject)
- *   - apifyCostUsd: custo total dos runs Apify desta execução
+ *   - apifyCostUsd: sempre 0 (scraping direto, sem custo)
  */
 export async function scrapeWorkana() {
-  const token = process.env.APIFY_TOKEN
   const allProjects = []
-  let totalCost = 0
 
   for (const keyword of WORKANA_KEYWORDS) {
     try {
       console.log(`  🔎 Workana: "${keyword}"`)
 
-      // Inicia um run Apify para a keyword
-      const runData = await withRetry(() =>
-        fetch(`${APIFY_BASE}/acts/${ACTOR_ID}/runs?token=${token}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: keyword, maxItems: 50 })
-        }).then(r => r.json())
-      )
+      const params = new URLSearchParams({ query: keyword, language: 'pt,en' })
+      const html = await fetchPage(`${SEARCH_URL}?${params}`)
 
-      const runId = runData.data?.id
-      if (!runId) throw new Error(`Falha ao iniciar: ${JSON.stringify(runData)}`)
+      // Preferência: JSON embutido; fallback: parse do HTML
+      const embedded = tryParseEmbeddedJson(html)
+      const projects = embedded ?? parseHtmlProjects(html)
 
-      const datasetId = await pollRun(runId, token)
-      totalCost += await getRunCost(runId, token)
-
-      const itemsRes = await fetch(`${APIFY_BASE}/datasets/${datasetId}/items?token=${token}&limit=100`)
-      const items = await itemsRes.json()
-
-      if (Array.isArray(items)) allProjects.push(...items)
+      console.log(`    📦 ${projects.length} projetos (${embedded ? 'JSON embutido' : 'HTML'})`)
+      allProjects.push(...projects)
     } catch (err) {
-      console.error(`  ❌ Workana erro "${keyword}": ${err.message}`)
+      console.warn(`  ⚠️  Workana erro "${keyword}": ${err.message} — continuando`)
     }
 
-    // Pausa entre keywords para evitar rate limiting
-    await new Promise(r => setTimeout(r, KEYWORD_DELAY_MS))
+    await randomDelay()
   }
 
   return {
     projects: allProjects,
-    apifyCostUsd: totalCost
+    apifyCostUsd: 0
   }
 }

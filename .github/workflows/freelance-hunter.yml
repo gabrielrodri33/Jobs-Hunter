@@ -10,19 +10,16 @@ on:
 jobs:
   hunt:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      # Faz checkout do código
       - uses: actions/checkout@v4
 
-      # Configura Node.js 20
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
-      # Instala dependências do projeto
       - run: npm ci
 
-      # Restaura o cache de IDs já vistos para evitar reenvio de projetos duplicados
       - name: Restaurar cache de dedup
         uses: actions/cache@v4
         with:
@@ -30,18 +27,17 @@ jobs:
           key: seen-projects-${{ github.run_id }}
           restore-keys: seen-projects-
 
-      # Executa o Freelance Hunter
       - name: Executar Freelance Hunter
         run: node src/freelance-hunter/index.js
         env:
-          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_MODELS_ANALYZER: ${{ secrets.OPENROUTER_MODELS_ANALYZER }}
+          OPENROUTER_MODELS_WRITER: ${{ secrets.OPENROUTER_MODELS_WRITER }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           FREELANCER_TOKEN: ${{ secrets.FREELANCER_TOKEN }}
           FREELANCE_EMAIL_FROM: ${{ secrets.FREELANCE_EMAIL_FROM }}
           FREELANCE_EMAIL_TO: ${{ secrets.FREELANCE_EMAIL_TO }}
 
-      # Salva o cache atualizado mesmo se o passo anterior falhar
       - name: Salvar cache de dedup
         if: always()
         uses: actions/cache@v4

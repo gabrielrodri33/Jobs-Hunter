@@ -2,8 +2,17 @@
   "name": "career-hunter",
   "version": "1.0.0",
   "type": "module",
-  "description": "Autonomous agent that hunts jobs and freelance projects, analyzes compatibility with your profile using Claude AI, and sends a daily email with cover letters",
-  "keywords": ["job-hunting", "claude-ai", "anthropic", "apify", "automation", "github-actions", "career", "freelance"],
+  "description": "Agente autônomo de busca de vagas e projetos freelance — scraping direto + LLMs gratuitos via OpenRouter",
+  "keywords": [
+    "job-hunting",
+    "claude-ai",
+    "anthropic",
+    "apify",
+    "automation",
+    "github-actions",
+    "career",
+    "freelance"
+  ],
   "author": "Gabriel Siqueira",
   "license": "MIT",
   "homepage": "https://github.com/gabrielrodri33/Jobs-Hunter",
@@ -24,7 +33,7 @@
     "dev:freelance": "node --env-file=.env src/freelance-hunter/index.js"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "latest",
+    "cheerio": "^1.2.0",
     "resend": "latest"
   }
 }

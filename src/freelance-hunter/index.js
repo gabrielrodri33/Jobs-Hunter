@@ -1,15 +1,16 @@
 /**
  * @module freelance-hunter/index
  * @description Orquestrador do Freelance Hunter.
- * Fluxo: scraping Upwork + Workana + Freelancer.com (falhas individuais não interrompem) →
- *        normalização → dedup cross-platform → análise Claude → propostas → e-mail.
+ * Fluxo: scraping Workana + Freelancer.com (falhas individuais não interrompem) →
+ *        normalização → dedup cross-platform → análise LLM (OpenRouter) → propostas → e-mail.
  */
 
 import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
 import { analyzeItems } from '../shared/analyzer.js'
 import { generateCoverLetters } from '../shared/cover-letter.js'
 import { sendFreelanceEmail, sendErrorEmail } from '../shared/email.js'
-import { scrapeUpwork } from './scrapers/upwork.js'
+// DESATIVADO temporariamente (custo Apify + Cloudflare). Reativar avaliando alternativas.
+// import { scrapeUpwork } from './scrapers/upwork.js'
 import { scrapeWorkana } from './scrapers/workana.js'
 import { scrapeFreelancer } from './scrapers/freelancer.js'
 import { normalizeProject } from './normalizer.js'
@@ -70,52 +71,37 @@ async function main() {
   // ── 2. Scraping das plataformas ────────────────────────────────────────────
   currentStep = 'scraping plataformas'
   console.log('🔍 Buscando projetos nas plataformas...')
-  const [upworkResult, workanaResult, freelancerResult] = await Promise.allSettled([
-    scrapeUpwork(),
+  const [workanaResult, freelancerResult] = await Promise.allSettled([
     scrapeWorkana(),
     scrapeFreelancer()
+    // scrapeUpwork() — DESATIVADO temporariamente (custo Apify + Cloudflare)
   ])
 
-  const platformProjects = { Upwork: [], Workana: [], 'Freelancer.com': [] }
-  let upworkCost = 0
-  let workanaCost = 0
-  let freelancerCost = 0
-
-  if (upworkResult.status === 'fulfilled') {
-    const { projects, apifyCostUsd } = upworkResult.value
-    console.log(`  ✅ Upwork: ${projects.length} projetos`)
-    platformProjects['Upwork'] = projects
-    upworkCost = apifyCostUsd
-  } else {
-    console.warn(`  ⚠️  Upwork falhou (continuando): ${upworkResult.reason?.message}`)
-  }
+  const platformProjects = { Workana: [], 'Freelancer.com': [] }
 
   if (workanaResult.status === 'fulfilled') {
-    const { projects, apifyCostUsd } = workanaResult.value
+    const { projects } = workanaResult.value
     console.log(`  ✅ Workana: ${projects.length} projetos`)
     platformProjects['Workana'] = projects
-    workanaCost = apifyCostUsd
   } else {
     console.warn(`  ⚠️  Workana falhou (continuando): ${workanaResult.reason?.message}`)
   }
 
   if (freelancerResult.status === 'fulfilled') {
-    const { projects, apifyCostUsd } = freelancerResult.value
+    const { projects } = freelancerResult.value
     console.log(`  ✅ Freelancer.com: ${projects.length} projetos`)
     platformProjects['Freelancer.com'] = projects
-    freelancerCost = apifyCostUsd
   } else {
     console.warn(`  ⚠️  Freelancer.com falhou (continuando): ${freelancerResult.reason?.message}`)
   }
 
   // ── 3. Normalização e dedup ────────────────────────────────────────────────
   const rawProjects = [
-    ...platformProjects['Upwork'].map(p => normalizeProject(p, 'Upwork')),
     ...platformProjects['Workana'].map(p => normalizeProject(p, 'Workana')),
     ...platformProjects['Freelancer.com'].map(p => normalizeProject(p, 'Freelancer.com'))
   ]
 
-  console.log(`📦 ${rawProjects.length} projetos — Upwork: ${platformProjects['Upwork'].length} | Workana: ${platformProjects['Workana'].length} | Freelancer.com: ${platformProjects['Freelancer.com'].length}`)
+  console.log(`📦 ${rawProjects.length} projetos — Workana: ${platformProjects['Workana'].length} | Freelancer.com: ${platformProjects['Freelancer.com'].length}`)
 
   // Dedup cross-platform (remove similares entre plataformas) + dedup histórico
   const deduped = dedupCrossplatform(rawProjects)
@@ -127,9 +113,9 @@ async function main() {
     process.exit(0)
   }
 
-  // ── 4. Análise de compatibilidade com Claude ───────────────────────────────
-  currentStep = 'análise com Claude'
-  console.log('🤖 Analisando com Claude...')
+  // ── 4. Análise de compatibilidade com LLM ──────────────────────────────────
+  currentStep = 'análise com LLM'
+  console.log('🤖 Analisando com LLM (OpenRouter)...')
   const { results: analyzed, usage: analyzerUsage } = await analyzeItems(newProjects, 'freelance')
 
   let aceitar = analyzed.filter(p => p.score === 'ACEITAR')
@@ -158,13 +144,11 @@ async function main() {
     clUsage = clResult.usage
   }
 
-  // ── 6. Monta resumo de custos da execução ──────────────────────────────────
-  const totalScraperCost = upworkCost + workanaCost + freelancerCost
+  // ── 6. Monta resumo de custos da execução (tudo gratuito — custo zero) ─────
   const usageSummary = {
     scrapers: [
-      { name: 'Upwork (Apify)', costUsd: upworkCost, items: platformProjects['Upwork'].length },
-      { name: 'Workana (Apify)', costUsd: workanaCost, items: platformProjects['Workana'].length },
-      { name: 'Freelancer.com (API nativa)', costUsd: freelancerCost, items: platformProjects['Freelancer.com'].length }
+      { name: 'Workana (scraping direto)', costUsd: 0, items: platformProjects['Workana'].length },
+      { name: 'Freelancer.com (API nativa)', costUsd: 0, items: platformProjects['Freelancer.com'].length }
     ],
     anthropic: {
       analysis: {
@@ -180,13 +164,8 @@ async function main() {
         costUsd: clUsage.costUsd
       }
     },
-    totalCostUsd: parseFloat(
-      (totalScraperCost + analyzerUsage.costUsd + clUsage.costUsd).toFixed(4)
-    ),
-    // Estimativa mensal baseada em 22 dias úteis
-    estimatedMonthlyCostUsd: parseFloat(
-      ((totalScraperCost + analyzerUsage.costUsd + clUsage.costUsd) * 22).toFixed(2)
-    )
+    totalCostUsd: 0,
+    estimatedMonthlyCostUsd: 0
   }
 
   // ── 7. Envio do e-mail ─────────────────────────────────────────────────────

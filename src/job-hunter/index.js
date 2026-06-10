@@ -1,7 +1,7 @@
 /**
  * @module job-hunter/index
  * @description Orquestrador do Job Hunter.
- * Fluxo: scraping LinkedIn → dedup → análise Claude → e-mail.
+ * Fluxo: scraping LinkedIn → dedup → análise LLM (OpenRouter) → e-mail.
  */
 
 import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
@@ -22,7 +22,7 @@ async function main() {
   const seenIds = loadSeen(SEEN_FILE)
   console.log(`📋 ${seenIds.length} vagas já vistas no cache`)
 
-  // ── 2. Scraping LinkedIn via Apify ─────────────────────────────────────────
+  // ── 2. Scraping LinkedIn (endpoint guest) ─────────────────────────────────────
   currentStep = 'scraping LinkedIn'
   console.log('🔍 Buscando vagas no LinkedIn...')
   const { jobs: rawJobs, apifyCostUsd: linkedinCost } = await runLinkedinScraper()
@@ -38,8 +38,8 @@ async function main() {
   }
 
   // ── 3. Análise de compatibilidade com Claude ───────────────────────────────
-  currentStep = 'análise com Claude'
-  console.log('🤖 Analisando com Claude...')
+  currentStep = 'análise com LLM'
+  console.log('🤖 Analisando com LLM (OpenRouter)...')
   const { results: analyzed, usage: analyzerUsage } = await analyzeItems(newJobs, 'job')
 
   const candidatar = analyzed.filter(j => j.score === 'CANDIDATAR')
@@ -57,7 +57,7 @@ async function main() {
   // ── 4. Monta resumo de custos da execução ──────────────────────────────────
   const usageSummary = {
     scrapers: [
-      { name: 'LinkedIn (Apify)', costUsd: linkedinCost, items: rawJobs.length }
+      { name: 'LinkedIn (scraping direto)', costUsd: linkedinCost, items: rawJobs.length }
     ],
     anthropic: {
       analysis: {

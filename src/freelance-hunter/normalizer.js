@@ -66,7 +66,7 @@ function normalizeUpwork(raw) {
 }
 
 /**
- * Normaliza um projeto bruto do Workana (via Apify getdataforme/workana-job-scraper).
+ * Normaliza um projeto bruto do Workana (via scraping direto da busca pública).
  * @param {Object} raw - Objeto bruto retornado pelo scraper.
  * @returns {Object} Projeto normalizado no schema cross-platform.
  */
@@ -76,7 +76,10 @@ function normalizeWorkana(raw) {
     title: raw.title ?? raw.name ?? 'Sem título',
     description: raw.description ?? raw.body ?? '',
     client: raw.client?.name ?? raw.client ?? 'Não informado',
-    budget: raw.budget ? `BRL ${raw.budget}` : 'Não informado',
+    // Scraping direto já entrega string com moeda (ex: "USD 50 – 100"); número vem sem moeda
+    budget: typeof raw.budget === 'string' && raw.budget
+      ? raw.budget
+      : raw.budget ? `BRL ${raw.budget}` : 'Não informado',
     budget_type: guessBudgetType(raw),
     skills: (raw.skills ?? raw.tags ?? []).map(s => s.name ?? s),
     proposals_count: raw.proposals ?? null,

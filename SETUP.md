@@ -9,7 +9,7 @@
 
 ---
 
-## Erro: secret não definido (APIFY_TOKEN, ANTHROPIC_API_KEY, etc.)
+## Erro: secret não definido (OPENROUTER_API_KEY, RESEND_API_KEY, etc.)
 
 Os secrets são **case-sensitive**. Confirme que o nome está exatamente igual à tabela do README.
 
@@ -40,31 +40,19 @@ Se o secret aparecer na lista mas o erro persistir, delete e recrie — às veze
 
 ---
 
-## Apify retorna 0 resultados (LinkedIn / Upwork / Workana)
+## Scraper retorna 0 resultados (LinkedIn / Workana)
 
-A plataforma pode estar bloqueando o scraper. Adicione proxy residencial no input do actor correspondente:
+O scraping é direto, sem proxy. Possíveis causas:
 
-**LinkedIn** (`src/job-hunter/scrapers/linkedin.js`):
-```javascript
-body: JSON.stringify({
-  count: 50,
-  scrapeCompany: true,
-  splitByLocation: false,
-  urls: SEARCH_URLS,
-  proxyConfiguration: {
-    useApifyProxy: true,
-    apifyProxyGroups: ['RESIDENTIAL']
-  }
-})
-```
-
-**Upwork / Workana** — mesmo padrão no `body` do respectivo scraper.
+- **LinkedIn**: rate limiting do endpoint guest (HTTP 429). O scraper já usa delays aleatórios de 2–5s e retries com backoff — se persistir, reduza o número de buscas em `SEARCHES` (`src/job-hunter/scrapers/linkedin.js`).
+- **Workana**: mudança no layout da página. Confira os seletores em `parseHtmlProjects()` (`src/freelance-hunter/scrapers/workana.js`).
+- Falha de uma fonte não interrompe o pipeline — verifique os warnings nos logs.
 
 ---
 
-## Erro de parse no retorno do Claude
+## Erro de parse no retorno do LLM
 
-O sistema já remove blocos de markdown antes do `JSON.parse`, mas em casos raros o Claude pode retornar um formato inesperado. Se persistir:
+O sistema já remove blocos de markdown antes do `JSON.parse`, mas em casos raros o modelo pode retornar um formato inesperado. Se persistir:
 
 1. Abra a issue com o log completo do GitHub Actions (sem tokens/chaves)
 2. Inclua a mensagem de erro exata
@@ -86,7 +74,7 @@ O sistema já remove blocos de markdown antes do `JSON.parse`, mas em casos raro
 
 ---
 
-## Como testar sem gastar créditos
+## Como testar o analyzer isoladamente
 
 Você pode passar um array mockado diretamente para `analyzeItems` e testar o módulo isoladamente:
 
