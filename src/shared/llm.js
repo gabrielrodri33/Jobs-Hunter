@@ -21,7 +21,10 @@ const MIN_INTERVAL_MS = 3000
 // Backoff base ao trocar de modelo após 429/5xx
 const FALLBACK_DELAY_MS = 5000
 
-const DEFAULT_MODELS = 'deepseek/deepseek-chat:free,meta-llama/llama-3.3-70b-instruct:free'
+// "openrouter/free" é um router que escolhe automaticamente um modelo gratuito
+// disponível — imune à rotatividade dos IDs ":free". Os demais são fallbacks
+// explícitos (válidos em jun/2026; confira em openrouter.ai/models filtro Free).
+const DEFAULT_MODELS = 'openrouter/free,openai/gpt-oss-120b:free,nvidia/nemotron-3-super-120b-a12b:free'
 
 let lastCallAt = 0
 
