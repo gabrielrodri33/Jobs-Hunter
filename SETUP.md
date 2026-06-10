@@ -3,8 +3,8 @@
 ## O agente rodou mas não recebi e-mail
 
 1. Verifique os logs no GitHub Actions — pode ser que não havia vagas novas (dedup filtrou tudo)
-2. Confirme que o domínio em `JOB_EMAIL_FROM` está com status **Verified** ✅ no painel do Resend (**Domains**)
-3. Se estiver usando `onboarding@resend.dev`, o e-mail só chega no endereço cadastrado na sua conta Resend
+2. **Gmail (default):** confirme que `GMAIL_USER` e `GMAIL_APP_PASSWORD` estão corretos — a senha de app tem 16 caracteres e exige 2FA ativado
+3. **Resend (opcional):** confirme que o domínio em `JOB_EMAIL_FROM` está com status **Verified** ✅ no painel (**Domains**)
 4. Cheque a pasta de spam
 
 ---
@@ -19,7 +19,18 @@ Se o secret aparecer na lista mas o erro persistir, delete e recrie — às veze
 
 ---
 
-## Resend: como configurar o domínio
+## Gmail: como criar a senha de app
+
+1. Ative a verificação em duas etapas: [myaccount.google.com/security](https://myaccount.google.com/security)
+2. Acesse [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+3. Crie uma senha de app chamada `career-hunter` e copie os 16 caracteres
+4. Salve nos secrets `GMAIL_USER` e `GMAIL_APP_PASSWORD`
+
+> A página de senhas de app só aparece com 2FA ativado.
+
+---
+
+## Resend (opcional): como configurar o domínio
 
 1. No painel do Resend → **Domains** → **Add Domain**
 2. Digite seu domínio (ex: `flowmachine.com.br`) e clique em **Add**

@@ -56,7 +56,7 @@ ACEITAR
 Top 5 por win_probability → Cover letter / proposta PT + EN
   │
   ▼
-E-mail HTML via Resend
+E-mail HTML via Gmail SMTP (ou Resend)
 ```
 
 ---
@@ -76,7 +76,7 @@ career-hunter/
 │   │   ├── prefilter.js            # Pré-filtro local sem IA
 │   │   ├── analyzer.js             # Análise em lotes de 10 via LLM
 │   │   ├── cover-letter.js         # Propostas PT/EN (top 5 por win_probability)
-│   │   ├── email.js                # Resend: monta e envia HTML
+│   │   ├── email.js                # Gmail SMTP (default) ou Resend
 │   │   ├── dedup.js                # Evita reprocessar o que já foi visto
 │   │   └── utils.js                # sleep + retry com backoff
 │   ├── job-hunter/
@@ -104,7 +104,8 @@ career-hunter/
 | Serviço | Finalidade | Custo |
 |---|---|---|
 | [OpenRouter](https://openrouter.ai) | Análise e cover letters com modelos free | **Grátis** |
-| [Resend](https://resend.com) | Envio de e-mails | Grátis (3k emails/mês) |
+| Gmail (senha de app) | Envio de e-mails (default) | Grátis |
+| [Resend](https://resend.com) | Envio de e-mails (alternativa, requer domínio) | Grátis (3k emails/mês) |
 | [Freelancer.com Developers](https://developers.freelancer.com) | API de projetos freelance (opcional) | Grátis |
 | LinkedIn / Workana | Scraping direto de páginas públicas | Grátis |
 | **Total** | | **R$ 0/mês** |
@@ -144,11 +145,21 @@ No mesmo arquivo, ajuste `PREFILTER_RULES` — as keywords obrigatórias/proibid
 
 > **Modelos:** o sistema usa modelos `:free` (custo zero) com fallback automático entre eles. Os IDs free mudam com frequência — confira a lista atual em [openrouter.ai/models](https://openrouter.ai/models) (filtro **Free**) e, se quiser, sobrescreva via secrets `OPENROUTER_MODELS_ANALYZER` e `OPENROUTER_MODELS_WRITER` (IDs separados por vírgula).
 
-### 4. Configure o Resend (e-mails)
+### 4. Configurar e-mail (Gmail)
 
-1. Acesse [resend.com](https://resend.com) e crie uma conta
-2. **Domains** → **Add Domain** → verifique seu domínio via DNS *(sem domínio? use `onboarding@resend.dev` como remetente — o e-mail só chega no endereço cadastrado no Resend)*
-3. **API Keys** → **Create API Key** (permission: Sending access) → copie a chave (`re_...`)
+O provider padrão é o **Gmail SMTP** — não precisa de domínio nem de serviço externo:
+
+1. Ative a **verificação em duas etapas** na sua conta Google: [myaccount.google.com/security](https://myaccount.google.com/security)
+2. Acesse [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords)
+3. Crie uma senha de app com o nome `career-hunter` e copie os 16 caracteres gerados
+4. Crie os secrets `GMAIL_USER` (seu e-mail Gmail) e `GMAIL_APP_PASSWORD` (a senha de app)
+
+> No Gmail o remetente é sempre `GMAIL_USER` — o Gmail ignora remetente forjado, então `JOB_EMAIL_FROM`/`FREELANCE_EMAIL_FROM` não são necessários.
+
+#### Alternativa: Resend (para quem tem domínio próprio)
+
+1. Crie conta em [resend.com](https://resend.com), verifique seu domínio em **Domains** e crie uma **API Key**
+2. Configure os secrets `EMAIL_PROVIDER=resend`, `RESEND_API_KEY`, `JOB_EMAIL_FROM` e `FREELANCE_EMAIL_FROM`
 
 ### 5. (Opcional) Token do Freelancer.com
 
@@ -163,14 +174,17 @@ Configure em **Settings → Secrets and variables → Actions → New repository
 | Secret | Obrigatório | Descrição |
 |--------|-------------|-----------|
 | `OPENROUTER_API_KEY` | ✅ Sim | Chave do OpenRouter |
-| `RESEND_API_KEY` | ✅ Sim | Chave do Resend |
-| `JOB_EMAIL_FROM` | ✅ Sim | Remetente das vagas (ex: `vagas@seudominio.com`) |
-| `JOB_EMAIL_TO` | ✅ Sim | Destinatário das vagas (pode ser Gmail) |
-| `FREELANCE_EMAIL_FROM` | ✅ Sim | Remetente dos projetos freelance |
+| `GMAIL_USER` | ✅ Sim | Seu e-mail Gmail (remetente) |
+| `GMAIL_APP_PASSWORD` | ✅ Sim | Senha de app do Gmail (16 caracteres) |
+| `JOB_EMAIL_TO` | ✅ Sim | Destinatário das vagas |
 | `FREELANCE_EMAIL_TO` | ✅ Sim | Destinatário dos projetos |
 | `FREELANCER_TOKEN` | ⚡ Opcional | Token Freelancer.com (pula plataforma se ausente) |
 | `OPENROUTER_MODELS_ANALYZER` | ⚡ Opcional | Cadeia de modelos para análise |
 | `OPENROUTER_MODELS_WRITER` | ⚡ Opcional | Cadeia de modelos para cover letters |
+| `EMAIL_PROVIDER` | ⚡ Opcional | `gmail` (default) ou `resend` |
+| `RESEND_API_KEY` | ⚡ Opcional | Apenas com `EMAIL_PROVIDER=resend` |
+| `JOB_EMAIL_FROM` | ⚡ Opcional | Remetente das vagas (apenas Resend) |
+| `FREELANCE_EMAIL_FROM` | ⚡ Opcional | Remetente dos projetos (apenas Resend) |
 
 ### 7. Personalize as buscas (opcional)
 
@@ -187,7 +201,7 @@ Teste local:
 
 ```bash
 cp .env.example .env
-# Preencha o .env (só OPENROUTER_API_KEY e Resend são necessários)
+# Preencha o .env (só OPENROUTER_API_KEY, GMAIL_USER e GMAIL_APP_PASSWORD são necessários)
 npm run dev:jobs       # testa o job hunter
 npm run dev:freelance  # testa o freelance hunter
 ```

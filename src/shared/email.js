@@ -1,10 +1,78 @@
 /**
  * @module email
- * @description Templates HTML e envio de e-mails via Resend.
+ * @description Templates HTML e envio de e-mails via Gmail SMTP (default) ou Resend.
  * Inclui cards para vagas de emprego e projetos freelance, com cover letters e bloco de custo.
+ *
+ * Seleção do provider via EMAIL_PROVIDER:
+ *   "gmail"  (default) → nodemailer + SMTP do Gmail (GMAIL_USER + GMAIL_APP_PASSWORD)
+ *   "resend"           → Resend (RESEND_API_KEY + FROM com domínio verificado)
  */
 
 import { Resend } from 'resend'
+import nodemailer from 'nodemailer'
+
+// ── Provider de envio ─────────────────────────────────────────────────────────
+
+/**
+ * Valida as env vars do provider escolhido e o retorna.
+ * @returns {'gmail'|'resend'} Provider validado.
+ * @throws {Error} Se as vars obrigatórias do provider estiverem ausentes.
+ */
+function getProvider() {
+  // `||` (não `??`) — no GitHub Actions, secret ausente vira string vazia
+  const provider = (process.env.EMAIL_PROVIDER || 'gmail').toLowerCase()
+
+  if (provider === 'gmail') {
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      throw new Error('EMAIL_PROVIDER=gmail requer GMAIL_USER e GMAIL_APP_PASSWORD')
+    }
+    return 'gmail'
+  }
+
+  if (provider === 'resend') {
+    if (!process.env.RESEND_API_KEY) {
+      throw new Error('EMAIL_PROVIDER=resend requer RESEND_API_KEY')
+    }
+    return 'resend'
+  }
+
+  throw new Error(`EMAIL_PROVIDER inválido: "${provider}" (use "gmail" ou "resend")`)
+}
+
+/**
+ * Envia um e-mail HTML pelo provider configurado.
+ * No Gmail, o FROM é sempre GMAIL_USER (o Gmail ignora remetente forjado).
+ * @param {Object} opts
+ * @param {string} opts.from - Remetente (usado apenas pelo Resend).
+ * @param {string} opts.to - Destinatário.
+ * @param {string} opts.subject - Assunto.
+ * @param {string} opts.html - Corpo HTML.
+ */
+async function sendEmail({ from, to, subject, html }) {
+  const provider = getProvider()
+
+  if (provider === 'gmail') {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 465,
+      secure: true,
+      auth: {
+        user: process.env.GMAIL_USER,
+        pass: process.env.GMAIL_APP_PASSWORD
+      }
+    })
+    await transporter.sendMail({
+      from: `career-hunter <${process.env.GMAIL_USER}>`,
+      to,
+      subject,
+      html
+    })
+    return
+  }
+
+  const resend = new Resend(process.env.RESEND_API_KEY)
+  await resend.emails.send({ from, to, subject, html })
+}
 
 // ── Helpers de cor ────────────────────────────────────────────────────────────
 
@@ -269,7 +337,6 @@ function buildEmailHtml({ headerColor, headerEmoji, headerTitle, summaryCards, s
  * @param {Object} usageSummary - Resumo de custos da execução.
  */
 export async function sendJobsEmail(candidatar, avaliar, coverLetters, usageSummary) {
-  const resend = new Resend(process.env.RESEND_API_KEY)
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
   // Cria mapa id → coverLetter para lookup O(1)
@@ -296,7 +363,7 @@ export async function sendJobsEmail(candidatar, avaliar, coverLetters, usageSumm
     usageSummary
   })
 
-  await resend.emails.send({
+  await sendEmail({
     from: process.env.JOB_EMAIL_FROM,
     to: process.env.JOB_EMAIL_TO,
     subject: `🎯 ${candidatar.length} vagas para candidatar + ${avaliar.length} para avaliar — ${now}`,
@@ -313,7 +380,6 @@ export async function sendJobsEmail(candidatar, avaliar, coverLetters, usageSumm
  * @param {Object} usageSummary - Resumo de custos da execução.
  */
 export async function sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSummary) {
-  const resend = new Resend(process.env.RESEND_API_KEY)
   const now = new Date().toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })
 
   // Cria mapa id → coverLetter para lookup O(1)
@@ -340,7 +406,7 @@ export async function sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSu
     usageSummary
   })
 
-  await resend.emails.send({
+  await sendEmail({
     from: process.env.FREELANCE_EMAIL_FROM,
     to: process.env.FREELANCE_EMAIL_TO,
     subject: `💼 ${aceitar.length} projetos para proposta + ${avaliar.length} para avaliar — ${now}`,
@@ -358,9 +424,8 @@ export async function sendFreelanceEmail(aceitar, avaliar, coverLetters, usageSu
  * @param {string} opts.timestamp - Timestamp ISO da falha.
  */
 export async function sendErrorEmail({ agent, error, step, timestamp }) {
-  const resend = new Resend(process.env.RESEND_API_KEY)
-
   // Seleciona remetente/destinatário conforme o agente que falhou
+  // (FROM só é usado pelo provider Resend; no Gmail é sempre GMAIL_USER)
   const emailFrom = agent === 'job-hunter'
     ? process.env.JOB_EMAIL_FROM
     : process.env.FREELANCE_EMAIL_FROM
@@ -369,7 +434,7 @@ export async function sendErrorEmail({ agent, error, step, timestamp }) {
     ? process.env.JOB_EMAIL_TO
     : process.env.FREELANCE_EMAIL_TO
 
-  if (!emailFrom || !emailTo) return
+  if (!emailTo) return
 
   const html = `<!DOCTYPE html>
 <html lang="pt-BR">
@@ -398,7 +463,7 @@ export async function sendErrorEmail({ agent, error, step, timestamp }) {
 </body>
 </html>`
 
-  await resend.emails.send({
+  await sendEmail({
     from: emailFrom,
     to: emailTo,
     subject: `&#128165; [career-hunter] Falha no ${agent} — ${new Date(timestamp).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}`,

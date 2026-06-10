@@ -43,6 +43,10 @@ jobs:
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_MODELS_ANALYZER: ${{ secrets.OPENROUTER_MODELS_ANALYZER }}
           OPENROUTER_MODELS_WRITER: ${{ secrets.OPENROUTER_MODELS_WRITER }}
+          EMAIL_PROVIDER: ${{ secrets.EMAIL_PROVIDER }}
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          # Resend (opcional — apenas se EMAIL_PROVIDER=resend; secrets ausentes viram string vazia)
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           JOB_EMAIL_FROM: ${{ secrets.JOB_EMAIL_FROM }}
           JOB_EMAIL_TO: ${{ secrets.JOB_EMAIL_TO }}
