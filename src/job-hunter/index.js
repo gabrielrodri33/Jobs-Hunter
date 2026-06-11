@@ -8,6 +8,7 @@ import { loadSeen, saveSeen, filterNew } from '../shared/dedup.js'
 import { analyzeItems } from '../shared/analyzer.js'
 import { sendJobsEmail, sendErrorEmail } from '../shared/email.js'
 import { runLinkedinScraper } from './scrapers/linkedin.js'
+import { checkEnv } from '../shared/check-env.js'
 
 // Caminho do arquivo de dedup — gerenciado via GitHub Actions cache
 const SEEN_FILE = 'data/seen-jobs.json'
@@ -17,6 +18,9 @@ let currentStep = 'inicialização'
 
 async function main() {
   console.log(`🎯 Job Hunter iniciado — ${new Date().toISOString()}`)
+
+  // ── 0. Valida configuração (falha rápido se faltar secret) ────────────────
+  checkEnv('job-hunter')
 
   // ── 1. Carrega histórico de dedup ──────────────────────────────────────────
   const seenIds = loadSeen(SEEN_FILE)
