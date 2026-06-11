@@ -21,7 +21,10 @@ const MIN_INTERVAL_MS = 3000
 // Backoff base ao trocar de modelo após 429/5xx
 const FALLBACK_DELAY_MS = 5000
 
-const DEFAULT_MODELS = 'deepseek/deepseek-chat:free,meta-llama/llama-3.3-70b-instruct:free'
+// "openrouter/free" é um router que escolhe automaticamente um modelo gratuito
+// disponível — imune à rotatividade dos IDs ":free". Os demais são fallbacks
+// explícitos (válidos em jun/2026; confira em openrouter.ai/models filtro Free).
+const DEFAULT_MODELS = 'openrouter/free,openai/gpt-oss-120b:free,nvidia/nemotron-3-super-120b-a12b:free'
 
 let lastCallAt = 0
 
@@ -46,10 +49,11 @@ export function getModelChain(purpose) {
  * @param {string} opts.system - System prompt.
  * @param {string} opts.user - Mensagem do usuário.
  * @param {number} [opts.temperature=0.3]
+ * @param {number} [opts.maxTokens=8000] - Limite de tokens de saída (evita JSON truncado).
  * @returns {Promise<{text: string, model: string}>} Texto da resposta e modelo usado.
  * @throws {Error} Se todos os modelos da cadeia falharem.
  */
-export async function callLlm({ models, system, user, temperature = 0.3 }) {
+export async function callLlm({ models, system, user, temperature = 0.3, maxTokens = 8000 }) {
   if (!process.env.OPENROUTER_API_KEY) {
     throw new Error('OPENROUTER_API_KEY não configurado')
   }
@@ -76,6 +80,7 @@ export async function callLlm({ models, system, user, temperature = 0.3 }) {
         body: JSON.stringify({
           model,
           temperature,
+          max_tokens: maxTokens,
           messages: [
             { role: 'system', content: system },
             { role: 'user', content: user }
@@ -96,11 +101,26 @@ export async function callLlm({ models, system, user, temperature = 0.3 }) {
       }
 
       const data = await res.json()
-      const text = data.choices?.[0]?.message?.content
+
+      // OpenRouter pode retornar 200 com erro no corpo (ex: modelo inexistente)
+      if (data.error) {
+        errors.push(`${model}: ${data.error.message ?? JSON.stringify(data.error)}`)
+        console.warn(`  ⚠️  ${model} erro da API: ${data.error.message ?? JSON.stringify(data.error).slice(0, 200)}`)
+        await sleep(FALLBACK_DELAY_MS * (i + 1))
+        continue
+      }
+
+      const choice = data.choices?.[0]
+      const text = choice?.message?.content
       if (!text) {
         errors.push(`${model}: resposta vazia`)
         console.warn(`  ⚠️  ${model} retornou resposta vazia — tentando próximo modelo...`)
         continue
+      }
+
+      // Resposta cortada por limite de tokens gera JSON truncado — avisa para diagnóstico
+      if (choice.finish_reason === 'length') {
+        console.warn(`  ⚠️  ${model} truncou a resposta (finish_reason=length) — JSON pode estar incompleto`)
       }
 
       return { text, model }
@@ -121,14 +141,18 @@ export async function callLlm({ models, system, user, temperature = 0.3 }) {
  */
 export function cleanJsonString(str) {
   let s = str.replace(/^```json?\s*/i, '').replace(/```\s*$/i, '').trim()
-  // Alguns modelos adicionam texto antes/depois — extrai do primeiro [ ou { ao último ] ou }
-  const firstBracket = Math.min(...['[', '{'].map(c => {
-    const idx = s.indexOf(c)
-    return idx === -1 ? Infinity : idx
-  }))
-  const lastBracket = Math.max(s.lastIndexOf(']'), s.lastIndexOf('}'))
-  if (firstBracket !== Infinity && lastBracket > firstBracket) {
-    s = s.slice(firstBracket, lastBracket + 1)
+
+  // Prefer JSON array: find "[\s*{" or "[\s*[" which marks real array start
+  const arrayMatch = s.search(/\[\s*[\{\[]/)
+  if (arrayMatch !== -1) {
+    const arrayEnd = s.lastIndexOf(']')
+    if (arrayEnd > arrayMatch) return s.slice(arrayMatch, arrayEnd + 1)
   }
+
+  // Fallback: first { to last }
+  const objStart = s.indexOf('{')
+  const objEnd = s.lastIndexOf('}')
+  if (objStart !== -1 && objEnd > objStart) return s.slice(objStart, objEnd + 1)
+
   return s
 }
