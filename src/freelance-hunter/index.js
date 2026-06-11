@@ -14,6 +14,7 @@ import { sendFreelanceEmail, sendErrorEmail } from '../shared/email.js'
 import { scrapeWorkana } from './scrapers/workana.js'
 import { scrapeFreelancer } from './scrapers/freelancer.js'
 import { normalizeProject } from './normalizer.js'
+import { checkEnv } from '../shared/check-env.js'
 
 // Caminho do arquivo de dedup — gerenciado via GitHub Actions cache
 const SEEN_FILE = 'data/seen-projects.json'
@@ -63,6 +64,9 @@ function dedupCrossplatform(projects) {
 
 async function main() {
   console.log(`💼 Freelance Hunter iniciado — ${new Date().toISOString()}`)
+
+  // ── 0. Valida configuração (falha rápido se faltar secret) ────────────────
+  checkEnv('freelance-hunter')
 
   // ── 1. Carrega histórico de dedup ──────────────────────────────────────────
   const seenIds = loadSeen(SEEN_FILE)
